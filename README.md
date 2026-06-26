@@ -1,6 +1,6 @@
 # HandoffRail
 
-[![Tests](https://img.shields.io/badge/tests-379%20passing-brightgreen)](https://github.com/MelaBuilt-AI/handoffrail) [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://python.org) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Docker](https://img.shields.io/badge/docker-ready-2496ED)](https://hub.docker.com)
+[![Tests](https://img.shields.io/badge/tests-430%20passing-brightgreen)](https://github.com/MelaBuilt-AI/HandoffRail) [![PyPI](https://img.shields.io/pypi/v/handoffrail-sdk)](https://pypi.org/project/handoffrail-sdk/) [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://python.org) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/MelaBuilt-AI/HandoffRail/blob/main/LICENSE) [![Docker](https://img.shields.io/badge/docker-GHCR-2496ED)](https://github.com/MelaBuilt-AI/HandoffRail/pkgs/container/handoffrail) [![Docs](https://img.shields.io/badge/docs-handoffrail.melabuilt.ai-6c5ce7)](https://handoffrail.melabuilt.ai/docs/)
 
 > **Zero Context Loss Between AI Agents**
 >
@@ -8,7 +8,7 @@
 
 When Agent A finishes its part and hands off to Agent B (or a human), the full context — decisions, pending actions, dependencies, conversation state — survives the transition intact. **No context loss, no repetition, no dropped threads.**
 
-**379 tests passing · 19 API endpoints · Python SDK + CLI · LangChain & CrewAI adapters**
+**430 tests passing · 24 skipped · 19 API endpoints · Python SDK + CLI · LangChain & CrewAI adapters**
 
 ## Quick Start
 
@@ -17,11 +17,17 @@ When Agent A finishes its part and hands off to Agent B (or a human), the full c
 - Python 3.11+
 - pip
 
-### Install & Run
+### Install from PyPI
+
+```bash
+pip install handoffrail-sdk
+```
+
+### Install & Run from Source
 
 ```bash
 # Clone the repo
-git clone https://github.com/MelaBuilt-AI/handoffrail.git
+git clone https://github.com/MelaBuilt-AI/HandoffRail.git
 cd handoffrail
 
 # Install server with dev dependencies
@@ -388,7 +394,7 @@ python3 -m pytest tests/test_langchain_integration.py -v  # LangChain adapter
 python3 -m pytest tests/test_crewai_integration.py -v     # CrewAI adapter
 ```
 
-**379 tests passing, 24 skipped** (skipped tests require optional LangChain/CrewAI dependencies).
+**430 tests passing, 24 skipped** (skipped tests require optional LangChain/CrewAI dependencies).
 
 ## Architecture
 
