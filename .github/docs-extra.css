@@ -1,0 +1,30 @@
+/* HandoffRail Docs — extra styling */
+:root {
+  --md-primary-color: #6c5ce7;
+}
+
+.md-header {
+  background: linear-gradient(135deg, #0a0a0f 0%, #1a1a28 100%);
+}
+
+.md-header__title {
+  font-weight: 700;
+}
+
+/* PyPI + Docker badges */
+.md-typeset a[href*="pypi.org"] {
+  text-decoration: none;
+}
+
+/* Code blocks — match landing page dark theme */
+.md-typeset code {
+  background: #1a1a28;
+  border: 1px solid #2a2a3d;
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+}
+
+/* "Built by MelaBuilt AI" footer */
+.md-footer-meta__inner {
+  text-align: center;
+}

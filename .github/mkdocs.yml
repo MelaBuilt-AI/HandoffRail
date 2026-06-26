@@ -1,0 +1,85 @@
+site_name: HandoffRail Docs
+site_description: Session-continuity middleware for multi-agent AI workflows. Structured handoff packets, HITL approval, and framework adapters.
+site_url: https://handoffrail.melabuilt.ai/docs/
+repo_url: https://github.com/MelaBuilt-AI/HandoffRail
+repo_name: MelaBuilt-AI/HandoffRail
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site/docs-build
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - navigation.top
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+    logo: material/train
+
+nav:
+  - Home: index.md
+  - Quick Start: quickstart.md
+  - API Reference: api-reference.md
+  - SDK Guide: sdk-guide.md
+  - Deployment: deployment.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
+  - toc:
+      permalink: true
+  - attr_list
+  - md_in_html
+  - def_list
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/MelaBuilt-AI/HandoffRail
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/handoffrail-sdk/
+    - icon: fontawesome/brands/docker
+      link: https://github.com/MelaBuilt-AI/HandoffRail/pkgs/container/handoffrail
+  generator: false
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search

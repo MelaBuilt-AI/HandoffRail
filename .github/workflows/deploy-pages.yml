@@ -1,0 +1,49 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'landing/**'
+      - 'docs/**'
+      - 'README.md'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install MkDocs
+        run: pip install mkdocs mkdocs-material
+
+      - name: Build site
+        run: |
+          mkdir -p deploy/docs
+          cp landing/landing.html deploy/index.html
+          cd site 2>/dev/null || true
+          # Build docs from repo root docs/ dir
+          mkdir -p /tmp/mkdocs-build/docs
+          cp docs/*.md /tmp/mkdocs-build/docs/
+          mv /tmp/mkdocs-build/docs/README.md /tmp/mkdocs-build/docs/index.md 2>/dev/null || true
+          cp .github/mkdocs.yml /tmp/mkdocs-build/mkdocs.yml
+          mkdir -p /tmp/mkdocs-build/docs/stylesheets
+          cp .github/docs-extra.css /tmp/mkdocs-build/docs/stylesheets/extra.css 2>/dev/null || true
+          cd /tmp/mkdocs-build
+          mkdocs build --site-dir /tmp/docs-output
+          cp -r /tmp/docs-output/* $GITHUB_WORKSPACE/deploy/docs/
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy deploy --project-name=handoffrail --branch=main
