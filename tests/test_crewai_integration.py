@@ -19,11 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk" / "src"))
 
 import httpx
 import respx
-
+from handoffrail.integrations.crewai import _CREWAI_AVAILABLE, CrewAIAdapter
 from handoffrail.sdk.client import HandoffRailClient
 from handoffrail.sdk.models import PacketResponse, PacketStatus
-from handoffrail.integrations.crewai import CrewAIAdapter, _CREWAI_AVAILABLE
-
 
 BASE_URL = "http://testserver/api/v1"
 API_KEY = "hr_test_crewai_key"

@@ -7,7 +7,7 @@ DELETE /hooks/{id} — Deactivate a webhook
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import structlog
@@ -19,6 +19,7 @@ from app.database import get_db
 from app.middleware.auth import get_api_key_from_request
 from app.models.db import ApiKey, Webhook
 from app.models.packet import WebhookCreate, WebhookResponse
+from app.services.webhook import get_dlq_entries, replay_dlq_entry, retry_failed_deliveries
 
 logger = structlog.get_logger()
 
@@ -47,7 +48,7 @@ async def create_webhook(
         secret=payload.secret,
         tenant_id=api_key.tenant_id,
         active=True,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     # Serialize events list to JSON string
     db_webhook.set_events(payload.events)
@@ -139,3 +140,52 @@ async def delete_webhook(
     await db.commit()
 
     logger.info("webhook_deactivated", webhook_id=webhook_id, tenant_id=api_key.tenant_id)
+
+
+# ── Dead Letter Queue endpoints ────────────────────────────────────────────────
+
+
+@router.get(
+    "/dlq",
+    response_model=list[dict],
+)
+async def list_dlq(
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
+) -> list[dict]:
+    """List dead letter queue entries for the authenticated tenant."""
+    return await get_dlq_entries(tenant_id=api_key.tenant_id, limit=limit, offset=offset)
+
+
+@router.post(
+    "/dlq/{delivery_id}/replay",
+    status_code=status.HTTP_200_OK,
+)
+async def replay_dlq(
+    delivery_id: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
+) -> dict:
+    """Replay a single dead letter delivery attempt."""
+    success = await replay_dlq_entry(delivery_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"DLQ entry {delivery_id} not found, not in dead_letter status, or webhook inactive",
+        )
+    return {"delivery_id": delivery_id, "replayed": True}
+
+
+@router.post(
+    "/dlq/retry-all",
+    status_code=status.HTTP_200_OK,
+)
+async def retry_all_dlq(
+    db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
+) -> dict:
+    """Retry all failed deliveries that are due for retry."""
+    result = await retry_failed_deliveries(max_batch=100)
+    return result

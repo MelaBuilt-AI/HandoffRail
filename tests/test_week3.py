@@ -766,8 +766,9 @@ class TestWebhookDelivery:
 
     def test_build_webhook_payload(self):
         """Webhook payload includes required fields."""
-        from app.services.webhook import build_webhook_payload
         from unittest.mock import MagicMock
+
+        from app.services.webhook import build_webhook_payload
 
         packet = MagicMock()
         packet.id = "test-packet-id"
@@ -784,8 +785,9 @@ class TestWebhookDelivery:
 
     def test_build_webhook_payload_with_details(self):
         """Webhook payload includes extra details when provided."""
-        from app.services.webhook import build_webhook_payload
         from unittest.mock import MagicMock
+
+        from app.services.webhook import build_webhook_payload
 
         packet = MagicMock()
         packet.id = "test-id"

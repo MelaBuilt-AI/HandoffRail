@@ -7,7 +7,6 @@ and enforce validation rules matching the server's Pydantic models.
 from __future__ import annotations
 
 import pytest
-
 from handoffrail.sdk.models import (
     Actions,
     AgentInfo,
@@ -22,6 +21,7 @@ from handoffrail.sdk.models import (
     Metadata,
     PacketContext,
     PacketCreate,
+    PacketEvent,
     PacketListResponse,
     PacketResponse,
     PacketStatus,
@@ -31,9 +31,7 @@ from handoffrail.sdk.models import (
     TargetAgentInfo,
     WebhookCreate,
     WebhookResponse,
-    PacketEvent,
 )
-
 
 # ── Enum tests ────────────────────────────────────────────────────────────────
 

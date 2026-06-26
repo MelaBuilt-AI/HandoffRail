@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import structlog
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -16,12 +16,12 @@ from app.database import init_db
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.size_limit import RequestSizeLimitMiddleware
 from app.routers import (
-    hooks_router,
+    dashboard_router,
     health_router,
+    hooks_router,
     keys_router,
     metrics_router,
     packets_router,
-    dashboard_router,
     websocket_router,
 )
 from app.routers.metrics import PrometheusMiddleware

@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import pytest
-
 from handoffrail.sdk.builders import ChainBuilder, PacketBuilder
 from handoffrail.sdk.models import (
     ChainHandoffRequest,
     PacketCreate,
     Priority,
 )
-
 
 # ── PacketBuilder ────────────────────────────────────────────────────────────
 

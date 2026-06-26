@@ -1,8 +1,9 @@
 """HandoffRail API Server — Webhook dispatch service.
 
 Delivers POST notifications to registered webhook URLs when packet
-status changes occur. Includes HMAC-SHA256 signing and retry logic
-with exponential backoff (3 retries).
+status changes occur. Includes HMAC-SHA256 signing, retry logic
+with exponential backoff, persistent delivery tracking, and dead letter
+queue for permanently failed deliveries.
 """
 
 from __future__ import annotations
@@ -11,21 +12,23 @@ import asyncio
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.database import async_session
-from app.models.db import Packet, Webhook
+from app.models.db import Packet, Webhook, WebhookDelivery
 
 logger = structlog.get_logger()
 
 # Retry configuration
-MAX_RETRIES = 3
+MAX_RETRIES = 5
 INITIAL_BACKOFF_SECONDS = 1.0
 BACKOFF_MULTIPLIER = 2.0
+MAX_BACKOFF_SECONDS = 60.0
+DLQ_THRESHOLD = MAX_RETRIES  # After this many attempts → dead letter
 
 # Valid webhook event types mapped to status transitions
 STATUS_TO_EVENTS: dict[str, str] = {
@@ -76,7 +79,7 @@ def build_webhook_payload(
     """
     payload: dict = {
         "event": event_type,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "packet_id": packet.id,
         "status": packet.status,
         "metadata": packet.get_metadata(),
@@ -115,18 +118,72 @@ async def get_active_webhooks(tenant_id: str, event_type: str) -> list[Webhook]:
         return matching
 
 
+async def _create_delivery_record(
+    webhook_id: str,
+    tenant_id: str,
+    packet_id: str,
+    event_type: str,
+    payload: dict,
+) -> WebhookDelivery:
+    """Create a persistent delivery tracking record."""
+    delivery = WebhookDelivery(
+        id=str(uuid4()),
+        webhook_id=webhook_id,
+        tenant_id=tenant_id,
+        packet_id=packet_id,
+        event_type=event_type,
+        payload_json=json.dumps(payload, default=str),
+        status="pending",
+        attempts=0,
+    )
+    async with async_session() as session:
+        session.add(delivery)
+        await session.commit()
+        await session.refresh(delivery)
+    return delivery
+
+
+async def _update_delivery_record(
+    delivery_id: str,
+    status: str,
+    attempts: int,
+    error: str | None = None,
+    status_code: int | None = None,
+    next_retry_at: datetime | None = None,
+    delivered_at: datetime | None = None,
+) -> None:
+    """Update a delivery record after an attempt."""
+    async with async_session() as session:
+        await session.execute(
+            update(WebhookDelivery)
+            .where(WebhookDelivery.id == delivery_id)
+            .values(
+                status=status,
+                attempts=attempts,
+                last_error=error,
+                last_status_code=status_code,
+                next_retry_at=next_retry_at,
+                delivered_at=delivered_at,
+            )
+        )
+        await session.commit()
+
+
 async def deliver_webhook(
     webhook: Webhook,
     payload: dict,
+    delivery_id: str | None = None,
 ) -> bool:
     """Deliver a webhook payload to the registered URL with HMAC signing.
 
     Uses httpx for async HTTP delivery. Retries up to MAX_RETRIES times
-    with exponential backoff on failure.
+    with exponential backoff on failure. Tracks delivery in WebhookDelivery
+    table when delivery_id is provided.
 
     Args:
         webhook: The Webhook ORM object.
         payload: The payload dict to send.
+        delivery_id: Optional delivery record ID for tracking.
 
     Returns:
         True if delivery succeeded (2xx status), False otherwise.
@@ -140,10 +197,12 @@ async def deliver_webhook(
         "Content-Type": "application/json",
         "X-HR-Signature": signature,
         "X-HR-Event": payload.get("event", "unknown"),
-        "X-HR-Delivery-ID": str(uuid4()),
+        "X-HR-Delivery-ID": delivery_id or str(uuid4()),
     }
 
     backoff = INITIAL_BACKOFF_SECONDS
+    last_error = None
+    last_status_code = None
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -154,6 +213,8 @@ async def deliver_webhook(
                     headers=headers,
                 )
 
+                last_status_code = response.status_code
+
                 if 200 <= response.status_code < 300:
                     logger.info(
                         "webhook_delivered",
@@ -162,6 +223,14 @@ async def deliver_webhook(
                         status_code=response.status_code,
                         attempt=attempt,
                     )
+                    if delivery_id:
+                        await _update_delivery_record(
+                            delivery_id,
+                            status="delivered",
+                            attempts=attempt,
+                            status_code=response.status_code,
+                            delivered_at=datetime.now(UTC),
+                        )
                     return True
 
                 logger.warning(
@@ -171,6 +240,7 @@ async def deliver_webhook(
                     status_code=response.status_code,
                     attempt=attempt,
                 )
+                last_error = f"HTTP {response.status_code}: {response.text[:200]}"
 
         except Exception as exc:
             logger.warning(
@@ -180,17 +250,29 @@ async def deliver_webhook(
                 error=str(exc),
                 attempt=attempt,
             )
+            last_error = str(exc)
 
         if attempt < MAX_RETRIES:
             await asyncio.sleep(backoff)
-            backoff *= BACKOFF_MULTIPLIER
+            backoff = min(backoff * BACKOFF_MULTIPLIER, MAX_BACKOFF_SECONDS)
 
+    # All retries exhausted — move to DLQ
     logger.error(
         "webhook_delivery_failed",
         webhook_id=webhook.id,
         url=webhook.url,
         max_retries=MAX_RETRIES,
     )
+
+    if delivery_id:
+        await _update_delivery_record(
+            delivery_id,
+            status="dead_letter",
+            attempts=MAX_RETRIES,
+            error=last_error,
+            status_code=last_status_code,
+        )
+
     return False
 
 
@@ -203,7 +285,8 @@ async def dispatch_webhooks(
     """Dispatch webhook notifications for a packet event.
 
     Finds all active webhooks for the tenant that subscribe to the
-    event type and delivers the payload to each.
+    event type and delivers the payload to each. Creates persistent
+    delivery records for tracking and DLQ.
 
     Args:
         packet: The ORM Packet object.
@@ -233,11 +316,168 @@ async def dispatch_webhooks(
 
     results = []
     for webhook in webhooks:
-        success = await deliver_webhook(webhook, payload)
+        # Create delivery record for tracking
+        delivery = await _create_delivery_record(
+            webhook_id=webhook.id,
+            tenant_id=tenant_id,
+            packet_id=packet.id,
+            event_type=webhook_event,
+            payload=payload,
+        )
+
+        success = await deliver_webhook(webhook, payload, delivery_id=delivery.id)
         results.append({
             "webhook_id": webhook.id,
+            "delivery_id": delivery.id,
             "url": webhook.url,
             "success": success,
         })
 
     return results
+
+
+async def retry_failed_deliveries(max_batch: int = 50) -> dict:
+    """Retry webhook deliveries that are in 'failed' status with next_retry_at in the past.
+
+    This is intended to be called by a background task or admin endpoint.
+
+    Args:
+        max_batch: Maximum number of deliveries to retry in one batch.
+
+    Returns:
+        Summary dict with retried, succeeded, failed counts.
+    """
+    now = datetime.now(UTC)
+    retried = 0
+    succeeded = 0
+    failed = 0
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(WebhookDelivery)
+            .where(
+                WebhookDelivery.status.in_(["failed", "pending"]),
+                WebhookDelivery.next_retry_at <= now,
+            )
+            .limit(max_batch)
+        )
+        deliveries = result.scalars().all()
+
+        for delivery in deliveries:
+            # Fetch the webhook
+            wh_result = await session.execute(
+                select(Webhook).where(Webhook.id == delivery.webhook_id)
+            )
+            webhook = wh_result.scalar_one_or_none()
+            if webhook is None or not webhook.active:
+                # Webhook gone or inactive → mark as dead letter
+                delivery.status = "dead_letter"
+                delivery.last_error = "Webhook no longer exists or inactive"
+                continue
+
+            retried += 1
+            success = await deliver_webhook(
+                webhook,
+                json.loads(delivery.payload_json),
+                delivery_id=delivery.id,
+            )
+            if success:
+                succeeded += 1
+            else:
+                failed += 1
+
+        await session.commit()
+
+    logger.info(
+        "dlq_retry_batch",
+        retried=retried,
+        succeeded=succeeded,
+        failed=failed,
+    )
+
+    return {"retried": retried, "succeeded": succeeded, "failed": failed}
+
+
+async def get_dlq_entries(
+    tenant_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    """Get dead letter queue entries, optionally filtered by tenant.
+
+    Args:
+        tenant_id: Optional tenant filter.
+        limit: Max results.
+        offset: Pagination offset.
+
+    Returns:
+        List of DLQ entry dicts.
+    """
+    async with async_session() as session:
+        query = select(WebhookDelivery).where(
+            WebhookDelivery.status == "dead_letter"
+        )
+        if tenant_id:
+            query = query.where(WebhookDelivery.tenant_id == tenant_id)
+
+        query = query.order_by(WebhookDelivery.updated_at.desc()).offset(offset).limit(limit)
+        result = await session.execute(query)
+        deliveries = result.scalars().all()
+
+        return [
+            {
+                "id": d.id,
+                "webhook_id": d.webhook_id,
+                "packet_id": d.packet_id,
+                "event_type": d.event_type,
+                "attempts": d.attempts,
+                "last_error": d.last_error,
+                "last_status_code": d.last_status_code,
+                "created_at": d.created_at.isoformat() if d.created_at else None,
+                "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+            }
+            for d in deliveries
+        ]
+
+
+async def replay_dlq_entry(delivery_id: str) -> bool:
+    """Replay a single dead letter delivery.
+
+    Resets the delivery to pending and attempts immediate delivery.
+
+    Args:
+        delivery_id: The WebhookDelivery ID to replay.
+
+    Returns:
+        True if delivery succeeded, False otherwise.
+    """
+    async with async_session() as session:
+        result = await session.execute(
+            select(WebhookDelivery).where(WebhookDelivery.id == delivery_id)
+        )
+        delivery = result.scalar_one_or_none()
+        if delivery is None:
+            return False
+
+        if delivery.status != "dead_letter":
+            return False
+
+        # Fetch the webhook
+        wh_result = await session.execute(
+            select(Webhook).where(Webhook.id == delivery.webhook_id)
+        )
+        webhook = wh_result.scalar_one_or_none()
+        if webhook is None or not webhook.active:
+            return False
+
+        # Reset and retry
+        delivery.status = "pending"
+        delivery.attempts = 0
+        delivery.last_error = None
+        await session.commit()
+
+    return await deliver_webhook(
+        webhook,
+        json.loads(delivery.payload_json),
+        delivery_id=delivery_id,
+    )

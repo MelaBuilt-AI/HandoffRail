@@ -20,11 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk" / "src"))
 
 import httpx
 import respx
-
 from handoffrail.integrations.base import BaseAdapter
 from handoffrail.sdk.client import HandoffRailClient
 from handoffrail.sdk.models import PacketResponse, PacketStatus
-
 
 BASE_URL = "http://testserver/api/v1"
 API_KEY = "hr_test_base_adapter_key"
@@ -409,9 +407,10 @@ class TestAdapterMethodSignatures:
 
     def test_create_handoff_params(self):
         """All adapters should accept the same create_handoff parameters."""
-        from handoffrail.integrations.langchain import LangChainAdapter
-        from handoffrail.integrations.crewai import CrewAIAdapter
         import inspect
+
+        from handoffrail.integrations.crewai import CrewAIAdapter
+        from handoffrail.integrations.langchain import LangChainAdapter
 
         base_sig = set(inspect.signature(BaseAdapter.create_handoff).parameters)
         lc_sig = set(inspect.signature(LangChainAdapter.create_handoff).parameters)

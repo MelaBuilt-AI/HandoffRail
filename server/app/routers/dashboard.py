@@ -5,10 +5,10 @@ Provides aggregate statistics for the web dashboard.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -37,7 +37,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)) -> dict:
     total_packets = sum(packets_by_status.values())
 
     # Packets created in last 24h
-    twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
+    twenty_four_hours_ago = datetime.now(UTC) - timedelta(hours=24)
     recent_count_query = select(
         func.count(Packet.id),
     ).where(Packet.created_at >= twenty_four_hours_ago)

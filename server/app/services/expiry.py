@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +38,7 @@ async def _expire_packet(packet: Packet, session: AsyncSession) -> None:
         return
 
     packet.status = "expired"
-    packet.updated_at = datetime.now(timezone.utc)
+    packet.updated_at = datetime.now(UTC)
 
     event = PacketEvent(
         id=str(__import__("uuid").uuid4()),
@@ -46,7 +46,7 @@ async def _expire_packet(packet: Packet, session: AsyncSession) -> None:
         event_type=StatusTransition.EXPIRE.value,
         actor="system:expiry_task",
         details_json=json.dumps({"previous_status": packet.status, "reason": "ttl_exceeded"}, default=str),
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
     session.add(event)
     logger.info("packet_expired", packet_id=packet.id, previous_status=packet.status)
@@ -57,7 +57,7 @@ async def check_and_expire_packets() -> int:
 
     Returns the number of packets expired.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expired_count = 0
 
     async with async_session() as session:

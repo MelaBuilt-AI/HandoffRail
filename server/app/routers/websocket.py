@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import structlog
@@ -16,8 +16,8 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 
 from app.middleware.auth import hash_key
 from app.models.db import ApiKey
-from app.services.websocket import ConnectionManager, get_connection_manager
 from app.services.redis_pubsub import get_pubsub_manager
+from app.services.websocket import ConnectionManager, get_connection_manager
 
 logger = structlog.get_logger()
 
@@ -40,6 +40,7 @@ async def _authenticate_ws(
 
     # Look up the API key in the database
     from sqlalchemy import select
+
     from app.database import async_session
 
     key_hash = hash_key(api_key_str)
@@ -136,7 +137,7 @@ async def websocket_endpoint(
                     elif action == "ping":
                         await ws.send_json({
                             "type": "pong",
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                         })
 
                     else:
@@ -195,7 +196,7 @@ async def publish_event(
         "type": event_type,
         "packet_id": packet_id,
         "data": data,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
     # Broadcast locally (always)

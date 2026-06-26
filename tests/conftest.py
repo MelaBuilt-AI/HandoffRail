@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk" / "src"))
 # Add project root so `cli` package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.database import engine, async_session
+from app.database import async_session, engine
 from app.main import create_app
 from app.middleware.auth import generate_api_key
 from app.middleware.rate_limit import rate_limiter_registry

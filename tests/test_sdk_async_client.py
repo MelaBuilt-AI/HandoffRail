@@ -5,10 +5,9 @@ All HTTP calls are mocked using ``respx`` so no real server is needed.
 
 from __future__ import annotations
 
+import httpx
 import pytest
 import respx
-import httpx
-
 from handoffrail.sdk.async_client import AsyncHandoffRailClient
 from handoffrail.sdk.exceptions import (
     AuthenticationError,
@@ -18,6 +17,7 @@ from handoffrail.sdk.exceptions import (
     ValidationError,
 )
 from handoffrail.sdk.models import (
+    AgentInfo,
     ChainHandoffRequest,
     Metadata,
     PacketContext,
@@ -25,10 +25,8 @@ from handoffrail.sdk.models import (
     PacketResponse,
     PacketStatus,
     PacketUpdate,
-    AgentInfo,
     TargetAgentInfo,
 )
-
 
 BASE_URL = "http://testserver/api/v1"
 API_KEY = "hr_test_key_async_1234"

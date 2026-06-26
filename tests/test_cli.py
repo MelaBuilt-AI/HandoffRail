@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk" / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cli.main import cli
 from handoffrail.sdk.exceptions import (
     AuthenticationError,
     ConnectionError,
@@ -28,6 +27,7 @@ from handoffrail.sdk.models import (
     PacketResponse,
 )
 
+from cli.main import cli
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
 

@@ -10,7 +10,6 @@ from uuid import uuid4
 import httpx
 import pytest
 import respx
-
 from handoffrail.sdk.client import HandoffRailClient
 from handoffrail.sdk.exceptions import (
     AuthenticationError,
@@ -21,17 +20,16 @@ from handoffrail.sdk.exceptions import (
     ValidationError,
 )
 from handoffrail.sdk.models import (
+    AgentInfo,
     ChainHandoffRequest,
     Metadata,
     PacketContext,
     PacketCreate,
     PacketResponse,
-    PacketUpdate,
     PacketStatus,
-    AgentInfo,
+    PacketUpdate,
     TargetAgentInfo,
 )
-
 
 # ── Fixtures ────────────────────────────────────────────────────────────────────
 

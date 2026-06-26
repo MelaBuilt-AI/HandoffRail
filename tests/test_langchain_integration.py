@@ -20,11 +20,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk" / "src"))
 
 import httpx
 import respx
-
+from handoffrail.integrations.langchain import _LANGCHAIN_AVAILABLE, LangChainAdapter
 from handoffrail.sdk.client import HandoffRailClient
 from handoffrail.sdk.models import PacketResponse, PacketStatus
-from handoffrail.integrations.langchain import LangChainAdapter, _LANGCHAIN_AVAILABLE
-
 
 BASE_URL = "http://testserver/api/v1"
 API_KEY = "hr_test_langchain_key"

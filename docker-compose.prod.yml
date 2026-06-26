@@ -3,7 +3,7 @@
 #
 # Requires environment variables (set in .env or shell):
 #   HR_DATABASE_URL  — PostgreSQL connection string
-#   HR_REDIS_URL     — Redis connection string (optional, for future Celery use)
+#   HR_REDIS_URL     — Redis connection string
 #   HR_ENVIRONMENT   — Set to "prod"
 #   HR_LOG_LEVEL     — e.g. "info" or "warning"
 
@@ -25,6 +25,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migration:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
@@ -32,6 +34,19 @@ services:
       timeout: 5s
       start_period: 15s
       retries: 3
+
+  migration:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      - HR_DATABASE_URL=${HR_DATABASE_URL:-postgresql+asyncpg://handoffrail:handoffrail@db:5432/handoffrail}
+      - HR_ENVIRONMENT=${HR_ENVIRONMENT:-prod}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
 
   db:
     image: postgres:16-alpine

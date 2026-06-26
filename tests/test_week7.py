@@ -18,13 +18,13 @@ from app.database import (
     _get_engine_kwargs,
     is_postgres_url,
 )
+from app.main import create_app
 from app.middleware.rate_limit import (
     TIER_QUOTAS,
     DailyHandoffCounter,
     RateLimitRegistry,
     get_tier_quota,
 )
-from app.main import create_app
 from app.models.db import Base
 
 # ── Config tests ───────────────────────────────────────────────────────────────

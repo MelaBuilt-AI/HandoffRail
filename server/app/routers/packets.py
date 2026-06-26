@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -25,8 +25,9 @@ from app.models.packet import (
     PacketListResponse,
     PacketStatus,
 )
-from app.services.state_machine import InvalidTransitionError, validate_transition
+from app.routers.metrics import record_handoff, record_hitl_checkpoint, record_hitl_response
 from app.routers.websocket import publish_event
+from app.services.state_machine import InvalidTransitionError, validate_transition
 from app.services.tracing import trace_packet_operation
 
 logger = structlog.get_logger()
@@ -84,7 +85,7 @@ async def _add_event(
         event_type=event_type,
         actor=actor,
         details_json=json.dumps(details or {}, default=str),
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
     db.add(event)
 
@@ -262,7 +263,7 @@ async def create_packet(
 ) -> HandoffPacketResponse:
     """Create a new handoff packet with full v1 schema validation."""
     packet_id = str(uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with trace_packet_operation("create_packet", packet_id=packet_id, tenant_id=api_key.tenant_id) as span:
         span.set_attribute("packet.source_agent", payload.metadata.source_agent.id)
@@ -318,6 +319,10 @@ async def create_packet(
             source=payload.metadata.source_agent.id,
             target=payload.metadata.target_agent.id,
         )
+
+        record_handoff(tenant_id=api_key.tenant_id)
+        if initial_status == "awaiting_human":
+            record_hitl_checkpoint(tenant_id=api_key.tenant_id)
 
         # Broadcast event to WebSocket subscribers
         await publish_event(
@@ -402,7 +407,7 @@ async def claim_packet(
             )
         raise
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Update status and claimant info
     packet.status = "claimed"
@@ -470,7 +475,7 @@ async def update_packet(
     """Partially update a packet. Status transitions are validated against the state machine."""
     packet = await _get_packet_or_404(packet_id, db, tenant_id=api_key.tenant_id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Validate status transition if status is being changed
     if payload.status is not None and payload.status.value != packet.status:
@@ -595,7 +600,7 @@ async def delete_packet(
     except InvalidTransitionError:
         raise
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     previous_status = packet.status
     packet.status = "expired"
     packet.updated_at = now
@@ -664,7 +669,7 @@ async def respond_to_hitl(
             detail="Packet has no HITL checkpoint",
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Update HITL checkpoint with the response
     hitl["response"] = payload.response
@@ -706,6 +711,8 @@ async def respond_to_hitl(
     await db.refresh(packet)
 
     logger.info("hitl_responded", packet_id=str(packet_id), responded_by=payload.responded_by)
+
+    record_hitl_response(tenant_id=api_key.tenant_id)
 
     # Broadcast event to WebSocket subscribers
     await publish_event(
@@ -795,7 +802,7 @@ async def chain_packet(
     parent = await _get_packet_or_404(packet_id, db, tenant_id=api_key.tenant_id)
 
     new_id = str(uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Determine initial status
     initial_status = "created"

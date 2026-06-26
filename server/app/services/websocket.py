@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -152,7 +152,7 @@ class ConnectionManager:
                     "agent_ids": list(info.subscriptions.agent_ids),
                 },
                 "connected_at": datetime.fromtimestamp(
-                    info.connected_at, tz=timezone.utc
+                    info.connected_at, tz=UTC
                 ).isoformat(),
             }
             for info in self._connections.values()
@@ -293,7 +293,7 @@ class ConnectionManager:
         info = self._connections.get(connection_id)
         if info:
             try:
-                await info.websocket.send_json({"type": "ping", "timestamp": datetime.now(timezone.utc).isoformat()})
+                await info.websocket.send_json({"type": "ping", "timestamp": datetime.now(UTC).isoformat()})
                 info.last_heartbeat = time.time()
             except Exception:
                 pass
