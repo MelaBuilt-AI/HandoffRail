@@ -42,6 +42,9 @@ otel = [
     "opentelemetry-exporter-otlp-proto-grpc>=1.24,<2.0",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 120
