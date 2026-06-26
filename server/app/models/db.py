@@ -25,6 +25,7 @@ class Packet(Base):
     version: Mapped[str] = mapped_column(String(16), nullable=False, default="1.0.0")
     parent_packet_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="created", index=True)
+    tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, default="default", index=True)
 
     # Stored as JSON blobs for flexibility — the Pydantic models validate structure
     metadata_json: Mapped[str] = mapped_column(Text, nullable=False)

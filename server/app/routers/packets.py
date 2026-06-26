@@ -12,7 +12,8 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.db import Packet, PacketEvent
+from app.middleware.auth import get_api_key_from_request
+from app.models.db import ApiKey, Packet, PacketEvent
 from app.models.packet import (
     ChainRequest,
     ClaimRequest,
@@ -50,9 +51,15 @@ def _packet_to_response(packet: Packet) -> HandoffPacketResponse:
     )
 
 
-async def _get_packet_or_404(packet_id: UUID, db: AsyncSession) -> Packet:
-    """Fetch a packet by ID or raise 404."""
-    result = await db.execute(select(Packet).where(Packet.id == str(packet_id)))
+async def _get_packet_or_404(packet_id: UUID, db: AsyncSession, tenant_id: str | None = None) -> Packet:
+    """Fetch a packet by ID or raise 404.
+    
+    If tenant_id is provided, scopes the query to that tenant.
+    """
+    query = select(Packet).where(Packet.id == str(packet_id))
+    if tenant_id is not None:
+        query = query.where(Packet.tenant_id == tenant_id)
+    result = await db.execute(query)
     packet = result.scalar_one_or_none()
     if packet is None:
         raise HTTPException(
@@ -99,13 +106,15 @@ async def list_packets(
     limit: int = Query(50, ge=1, le=200, description="Max results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> PacketListResponse:
     """List packets with filtering and pagination.
 
     Supports filtering by status, source_agent, target_agent, tags,
     priority, and date range. Returns paginated results with total count.
+    Results are scoped to the authenticated tenant.
     """
-    query = select(Packet)
+    query = select(Packet).where(Packet.tenant_id == api_key.tenant_id)
 
     # Status filter (comma-separated for multiple)
     if status_filter:
@@ -171,7 +180,7 @@ async def list_packets(
     # Recalculate total if we did post-fetch filtering
     if source_agent or target_agent or tags or priority:
         # Need full count for accuracy
-        full_result = await db.execute(select(Packet))
+        full_result = await db.execute(select(Packet).where(Packet.tenant_id == api_key.tenant_id))
         all_packets = full_result.scalars().all()
         total_filtered = 0
         for p in all_packets:
@@ -209,15 +218,16 @@ async def list_awaiting_human(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> PacketListResponse:
     """Convenience endpoint: returns all packets in 'awaiting_human' status."""
-    count_query = select(func.count()).where(Packet.status == "awaiting_human")
+    count_query = select(func.count()).where(Packet.status == "awaiting_human", Packet.tenant_id == api_key.tenant_id)
     count_result = await db.execute(count_query)
     total = count_result.scalar() or 0
 
     query = (
         select(Packet)
-        .where(Packet.status == "awaiting_human")
+        .where(Packet.status == "awaiting_human", Packet.tenant_id == api_key.tenant_id)
         .order_by(Packet.created_at.asc())
         .offset(offset)
         .limit(limit)
@@ -247,6 +257,7 @@ async def list_awaiting_human(
 async def create_packet(
     payload: HandoffPacketCreate,
     db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> HandoffPacketResponse:
     """Create a new handoff packet with full v1 schema validation."""
     packet_id = str(uuid4())
@@ -276,6 +287,7 @@ async def create_packet(
         version="1.0.0",
         parent_packet_id=str(payload.parent_packet_id) if payload.parent_packet_id else None,
         status=initial_status,
+        tenant_id=api_key.tenant_id,
         metadata_json=json.dumps(metadata_dict, default=str),
         context_json=json.dumps(context_dict, default=str),
         decisions_json=json.dumps(decisions_list, default=str),
@@ -307,7 +319,7 @@ async def create_packet(
             "metadata": metadata_dict,
         },
         packet_id=packet_id,
-        tenant_id="default",  # TODO: extract from auth context
+        tenant_id=api_key.tenant_id,
     )
 
     return _packet_to_response(db_packet)
@@ -326,9 +338,10 @@ async def create_packet(
 async def get_packet(
     packet_id: UUID,
     db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> HandoffPacketResponse:
     """Get a single handoff packet by ID."""
-    packet = await _get_packet_or_404(packet_id, db)
+    packet = await _get_packet_or_404(packet_id, db, tenant_id=api_key.tenant_id)
     return _packet_to_response(packet)
 
 
@@ -348,13 +361,14 @@ async def claim_packet(
     packet_id: UUID,
     payload: ClaimRequest,
     db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> HandoffPacketResponse:
     """Claim a packet for processing.
 
     Only packets in 'created' or 'awaiting_human' status can be claimed.
     Conflict detection ensures only one agent can claim a packet.
     """
-    packet = await _get_packet_or_404(packet_id, db)
+    packet = await _get_packet_or_404(packet_id, db, tenant_id=api_key.tenant_id)
 
     # Check if packet is expired
     if packet.status == "expired":
@@ -418,7 +432,7 @@ async def claim_packet(
             "metadata": metadata,
         },
         packet_id=str(packet_id),
-        tenant_id="default",
+        tenant_id=api_key.tenant_id,
     )
 
     return _packet_to_response(packet)
@@ -439,9 +453,10 @@ async def update_packet(
     packet_id: UUID,
     payload: HandoffPacketUpdate,
     db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> HandoffPacketResponse:
     """Partially update a packet. Status transitions are validated against the state machine."""
-    packet = await _get_packet_or_404(packet_id, db)
+    packet = await _get_packet_or_404(packet_id, db, tenant_id=api_key.tenant_id)
 
     now = datetime.now(timezone.utc)
 
@@ -524,7 +539,7 @@ async def update_packet(
             "metadata": packet.get_metadata(),
         },
         packet_id=str(packet_id),
-        tenant_id="default",
+        tenant_id=api_key.tenant_id,
     )
 
     return _packet_to_response(packet)
@@ -544,12 +559,13 @@ async def update_packet(
 async def delete_packet(
     packet_id: UUID,
     db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> None:
     """Soft-delete a packet by marking it as expired.
 
     The packet is not removed from the database — its status is set to 'expired'.
     """
-    packet = await _get_packet_or_404(packet_id, db)
+    packet = await _get_packet_or_404(packet_id, db, tenant_id=api_key.tenant_id)
 
     if packet.status == "expired":
         raise HTTPException(
@@ -588,7 +604,7 @@ async def delete_packet(
             "metadata": packet.get_metadata(),
         },
         packet_id=str(packet_id),
-        tenant_id="default",
+        tenant_id=api_key.tenant_id,
     )
 
 
@@ -608,13 +624,14 @@ async def respond_to_hitl(
     packet_id: UUID,
     payload: HitlRespondRequest,
     db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> HandoffPacketResponse:
     """Submit a human response to a HITL checkpoint.
 
     Only works on packets in 'awaiting_human' status.
     After response, the packet transitions to 'claimed' or 'in_progress'.
     """
-    packet = await _get_packet_or_404(packet_id, db)
+    packet = await _get_packet_or_404(packet_id, db, tenant_id=api_key.tenant_id)
 
     if packet.status != "awaiting_human":
         raise HTTPException(
@@ -677,7 +694,7 @@ async def respond_to_hitl(
             "hitl_response": payload.response,
         },
         packet_id=str(packet_id),
-        tenant_id="default",
+        tenant_id=api_key.tenant_id,
     )
 
     return _packet_to_response(packet)
@@ -696,13 +713,14 @@ async def respond_to_hitl(
 async def get_packet_history(
     packet_id: UUID,
     db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> PacketHistoryResponse:
     """Return all status transitions and events for a packet.
 
     Returns timestamps and actor information for each event.
     """
-    # Verify packet exists
-    await _get_packet_or_404(packet_id, db)
+    # Verify packet exists (tenant-scoped)
+    await _get_packet_or_404(packet_id, db, tenant_id=api_key.tenant_id)
 
     result = await db.execute(
         select(PacketEvent)
@@ -744,14 +762,15 @@ async def chain_packet(
     packet_id: UUID,
     payload: ChainRequest,
     db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> HandoffPacketResponse:
     """Create a new packet that continues from the current one.
 
     Automatically sets parent_packet_id to the current packet's ID
     and links context from the parent.
     """
-    # Verify parent packet exists
-    parent = await _get_packet_or_404(packet_id, db)
+    # Verify parent packet exists (tenant-scoped)
+    parent = await _get_packet_or_404(packet_id, db, tenant_id=api_key.tenant_id)
 
     new_id = str(uuid4())
     now = datetime.now(timezone.utc)
@@ -788,6 +807,7 @@ async def chain_packet(
         version="1.0.0",
         parent_packet_id=str(packet_id),
         status=initial_status,
+        tenant_id=api_key.tenant_id,
         metadata_json=json.dumps(metadata_dict, default=str),
         context_json=json.dumps(context_dict, default=str),
         decisions_json=json.dumps(decisions_list, default=str),
@@ -834,7 +854,7 @@ async def chain_packet(
             "parent_packet_id": str(packet_id),
         },
         packet_id=new_id,
-        tenant_id="default",
+        tenant_id=api_key.tenant_id,
     )
 
     return _packet_to_response(db_packet)

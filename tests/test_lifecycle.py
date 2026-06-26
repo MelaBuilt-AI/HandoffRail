@@ -800,7 +800,7 @@ class TestApiKeyCrud:
     @pytest.mark.asyncio
     async def test_access_without_api_key(self, client: AsyncClient):
         """Accessing /keys without an API key returns 401."""
-        resp = await client.get("/api/v1/keys")
+        resp = await client.get("/api/v1/keys", headers={"X-API-Key": ""})
         assert resp.status_code == 401
 
     @pytest.mark.asyncio

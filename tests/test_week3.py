@@ -665,7 +665,7 @@ class TestWebhookCrud:
     @pytest.mark.asyncio
     async def test_list_webhooks_no_auth(self, client: AsyncClient):
         """GET /hooks without auth returns 401."""
-        resp = await client.get("/api/v1/hooks")
+        resp = await client.get("/api/v1/hooks", headers={"X-API-Key": ""})
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
