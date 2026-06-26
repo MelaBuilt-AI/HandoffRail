@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
@@ -40,42 +41,48 @@ class Packet(Base):
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    def get_metadata(self) -> dict:
-        return json.loads(self.metadata_json)
+    def get_metadata(self) -> dict[str, Any]:
+        result: dict[str, Any] = json.loads(self.metadata_json)
+        return result
 
-    def set_metadata(self, value: dict) -> None:
+    def set_metadata(self, value: dict[str, Any]) -> None:
         self.metadata_json = json.dumps(value, default=str)
 
-    def get_context(self) -> dict:
-        return json.loads(self.context_json)
+    def get_context(self) -> dict[str, Any]:
+        result: dict[str, Any] = json.loads(self.context_json)
+        return result
 
-    def set_context(self, value: dict) -> None:
+    def set_context(self, value: dict[str, Any]) -> None:
         self.context_json = json.dumps(value, default=str)
 
-    def get_decisions(self) -> list:
-        return json.loads(self.decisions_json)
+    def get_decisions(self) -> list[Any]:
+        result: list[Any] = json.loads(self.decisions_json)
+        return result
 
-    def set_decisions(self, value: list) -> None:
+    def set_decisions(self, value: list[Any]) -> None:
         self.decisions_json = json.dumps(value, default=str)
 
-    def get_actions(self) -> dict:
-        return json.loads(self.actions_json)
+    def get_actions(self) -> dict[str, Any]:
+        result: dict[str, Any] = json.loads(self.actions_json)
+        return result
 
-    def set_actions(self, value: dict) -> None:
+    def set_actions(self, value: dict[str, Any]) -> None:
         self.actions_json = json.dumps(value, default=str)
 
-    def get_dependencies(self) -> list:
-        return json.loads(self.dependencies_json)
+    def get_dependencies(self) -> list[Any]:
+        result: list[Any] = json.loads(self.dependencies_json)
+        return result
 
-    def set_dependencies(self, value: list) -> None:
+    def set_dependencies(self, value: list[Any]) -> None:
         self.dependencies_json = json.dumps(value, default=str)
 
-    def get_hitl(self) -> dict | None:
+    def get_hitl(self) -> dict[str, Any] | None:
         if self.hitl_json is None:
             return None
-        return json.loads(self.hitl_json)
+        result: dict[str, Any] = json.loads(self.hitl_json)
+        return result
 
-    def set_hitl(self, value: dict | None) -> None:
+    def set_hitl(self, value: dict[str, Any] | None) -> None:
         self.hitl_json = json.dumps(value, default=str) if value is not None else None
 
 
@@ -91,12 +98,13 @@ class PacketEvent(Base):
     details_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
-    def get_details(self) -> dict | None:
+    def get_details(self) -> dict[str, Any] | None:
         if self.details_json is None:
             return None
-        return json.loads(self.details_json)
+        result: dict[str, Any] = json.loads(self.details_json)
+        return result
 
-    def set_details(self, value: dict | None) -> None:
+    def set_details(self, value: dict[str, Any] | None) -> None:
         self.details_json = json.dumps(value, default=str) if value is not None else None
 
 
@@ -114,7 +122,8 @@ class Webhook(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     def get_events(self) -> list[str]:
-        return json.loads(self.events)
+        result: list[str] = json.loads(self.events)
+        return result
 
     def set_events(self, value: list[str]) -> None:
         self.events = json.dumps(value)

@@ -9,6 +9,8 @@ URL scheme detection:
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -44,7 +46,7 @@ def _build_database_url(url: str | None = None) -> str:
     return resolved
 
 
-def _get_engine_kwargs(url: str) -> dict:
+def _get_engine_kwargs(url: str) -> dict[str, Any]:
     """Get engine kwargs based on database type.
 
     SQLite needs check_same_thread=False for async; PostgreSQL gets pool settings.
@@ -79,7 +81,7 @@ engine = create_async_engine(_resolved_url, **_get_engine_kwargs(_resolved_url))
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency that yields an async database session."""
     async with async_session() as session:
         try:

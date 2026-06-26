@@ -32,10 +32,10 @@ class RedisPubSubManager:
 
     def __init__(self, redis_url: str = "redis://localhost:6379/0") -> None:
         self.redis_url = redis_url
-        self._redis = None
-        self._pubsub = None
+        self._redis: Any = None
+        self._pubsub: Any = None
         self._connected = False
-        self._listener_task: asyncio.Task | None = None
+        self._listener_task: asyncio.Task[None] | None = None
         self._on_event_callback: Any = None  # Called when an event is received from Redis
 
     async def connect(self) -> bool:
@@ -43,7 +43,7 @@ class RedisPubSubManager:
         try:
             import redis.asyncio as aioredis
 
-            self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
+            self._redis = aioredis.from_url(self.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
             # Test connection
             await self._redis.ping()
             self._connected = True
@@ -100,7 +100,7 @@ class RedisPubSubManager:
         """
         self._on_event_callback = callback
 
-    async def publish(self, event_type: str, data: dict, packet_id: str = "") -> None:
+    async def publish(self, event_type: str, data: dict[str, Any], packet_id: str = "") -> None:
         """Publish an event to Redis.
 
         Falls back to in-process broadcast if Redis is unavailable.

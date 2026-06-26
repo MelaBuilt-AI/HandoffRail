@@ -7,6 +7,7 @@ and handoffs per tenant. Uses prometheus-client directly for custom metrics.
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import structlog
 from fastapi import APIRouter
@@ -108,10 +109,10 @@ class PrometheusMiddleware:
     object — we track at the ASGI level instead.
     """
 
-    def __init__(self, app):
+    def __init__(self, app: Any) -> None:
         self.app = app
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -129,7 +130,7 @@ class PrometheusMiddleware:
         # Intercept the send to capture status code
         status_code = 200
 
-        async def send_with_status(message):
+        async def send_with_status(message: dict[str, Any]) -> None:
             nonlocal status_code
             if message["type"] == "http.response.start":
                 status_code = message.get("status", 200)

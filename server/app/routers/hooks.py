@@ -8,6 +8,7 @@ DELETE /hooks/{id} — Deactivate a webhook
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 import structlog
@@ -147,14 +148,14 @@ async def delete_webhook(
 
 @router.get(
     "/dlq",
-    response_model=list[dict],
+    response_model=list[dict[str, Any]],
 )
 async def list_dlq(
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     api_key: ApiKey = Depends(get_api_key_from_request),
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """List dead letter queue entries for the authenticated tenant."""
     return await get_dlq_entries(tenant_id=api_key.tenant_id, limit=limit, offset=offset)
 
@@ -167,7 +168,7 @@ async def replay_dlq(
     delivery_id: str,
     db: AsyncSession = Depends(get_db),
     api_key: ApiKey = Depends(get_api_key_from_request),
-) -> dict:
+) -> dict[str, Any]:
     """Replay a single dead letter delivery attempt."""
     success = await replay_dlq_entry(delivery_id)
     if not success:
@@ -185,7 +186,7 @@ async def replay_dlq(
 async def retry_all_dlq(
     db: AsyncSession = Depends(get_db),
     api_key: ApiKey = Depends(get_api_key_from_request),
-) -> dict:
+) -> dict[str, Any]:
     """Retry all failed deliveries that are due for retry."""
     result = await retry_failed_deliveries(max_batch=100)
     return result

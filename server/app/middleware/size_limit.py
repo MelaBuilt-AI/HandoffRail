@@ -14,6 +14,7 @@ import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp
 
 from app.middleware.rate_limit import DEFAULT_TIER, get_tier_quota
 
@@ -27,7 +28,7 @@ DEFAULT_MAX_BODY_SIZE = 256 * 1024
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     """Middleware that rejects oversized request bodies based on tier."""
 
-    def __init__(self, app, max_body_size: int = DEFAULT_MAX_BODY_SIZE):
+    def __init__(self, app: ASGIApp, max_body_size: int = DEFAULT_MAX_BODY_SIZE):
         super().__init__(app)
         self.max_body_size = max_body_size
 

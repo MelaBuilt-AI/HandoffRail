@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import structlog
@@ -41,12 +42,12 @@ def _packet_to_response(packet: Packet) -> HandoffPacketResponse:
         id=UUID(packet.id),
         version=packet.version,
         parent_packet_id=UUID(packet.parent_packet_id) if packet.parent_packet_id else None,
-        metadata=packet.get_metadata(),
-        context=packet.get_context(),
+        metadata=cast(Any, packet.get_metadata()),
+        context=cast(Any, packet.get_context()),
         decisions=packet.get_decisions(),
-        actions=packet.get_actions(),
+        actions=cast(Any, packet.get_actions()),
         dependencies=packet.get_dependencies(),
-        hitl=packet.get_hitl(),
+        hitl=cast(Any, packet.get_hitl()),
         status=PacketStatus(packet.status),
         created_at=packet.created_at,
         updated_at=packet.updated_at,
@@ -76,7 +77,7 @@ async def _add_event(
     packet_id: str,
     event_type: str,
     actor: str,
-    details: dict | None = None,
+    details: dict[str, Any] | None = None,
 ) -> None:
     """Record a packet event for the audit trail."""
     event = PacketEvent(

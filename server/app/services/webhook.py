@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 import structlog
@@ -65,8 +66,8 @@ def sign_payload(payload: str, secret: str) -> str:
 def build_webhook_payload(
     event_type: str,
     packet: Packet,
-    extra_details: dict | None = None,
-) -> dict:
+    extra_details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build the webhook payload for a packet event.
 
     Args:
@@ -77,7 +78,7 @@ def build_webhook_payload(
     Returns:
         Dict payload suitable for JSON serialization.
     """
-    payload: dict = {
+    payload: dict[str, Any] = {
         "event": event_type,
         "timestamp": datetime.now(UTC).isoformat(),
         "packet_id": packet.id,
@@ -123,7 +124,7 @@ async def _create_delivery_record(
     tenant_id: str,
     packet_id: str,
     event_type: str,
-    payload: dict,
+    payload: dict[str, Any],
 ) -> WebhookDelivery:
     """Create a persistent delivery tracking record."""
     delivery = WebhookDelivery(
@@ -171,7 +172,7 @@ async def _update_delivery_record(
 
 async def deliver_webhook(
     webhook: Webhook,
-    payload: dict,
+    payload: dict[str, Any],
     delivery_id: str | None = None,
 ) -> bool:
     """Deliver a webhook payload to the registered URL with HMAC signing.
@@ -280,8 +281,8 @@ async def dispatch_webhooks(
     packet: Packet,
     event_type: str,
     tenant_id: str = "default",
-    extra_details: dict | None = None,
-) -> list[dict]:
+    extra_details: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Dispatch webhook notifications for a packet event.
 
     Finds all active webhooks for the tenant that subscribe to the
@@ -336,7 +337,7 @@ async def dispatch_webhooks(
     return results
 
 
-async def retry_failed_deliveries(max_batch: int = 50) -> dict:
+async def retry_failed_deliveries(max_batch: int = 50) -> dict[str, Any]:
     """Retry webhook deliveries that are in 'failed' status with next_retry_at in the past.
 
     This is intended to be called by a background task or admin endpoint.
@@ -402,7 +403,7 @@ async def get_dlq_entries(
     tenant_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Get dead letter queue entries, optionally filtered by tenant.
 
     Args:

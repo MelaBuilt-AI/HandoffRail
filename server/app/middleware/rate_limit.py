@@ -17,6 +17,7 @@ from threading import Lock
 import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.types import ASGIApp
 
 from app.services.redis_pubsub import get_pubsub_manager
 
@@ -150,7 +151,7 @@ async def redis_increment_rate_limit(key_id: str, window_start: float, window_se
 
     try:
         redis_key = f"{REDIS_RATE_LIMIT_PREFIX}:{key_id}:{int(window_start)}"
-        count = await pubsub._redis.incr(redis_key)
+        count: int = await pubsub._redis.incr(redis_key)
         # Set expiry on first increment in the window
         if count == 1:
             await pubsub._redis.expire(redis_key, window_seconds + 60)  # +60s buffer
@@ -183,7 +184,7 @@ async def redis_increment_daily_handoff(tenant_id: str, day_key: str) -> int | N
 
     try:
         redis_key = f"{REDIS_DAILY_HANDOFF_PREFIX}:{tenant_id}:{day_key}"
-        count = await pubsub._redis.incr(redis_key)
+        count: int = await pubsub._redis.incr(redis_key)
         if count == 1:
             # Expire after 2 days (86400 * 2 seconds)
             await pubsub._redis.expire(redis_key, 172800)
@@ -228,7 +229,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     Adds X-RateLimit-* headers to all responses.
     """
 
-    def __init__(self, app: object, tier_limits: dict[str, int] | None = None) -> None:
+    def __init__(self, app: ASGIApp, tier_limits: dict[str, int] | None = None) -> None:
         super().__init__(app)
         self.tier_limits = tier_limits or TIER_LIMITS
         self.registry = rate_limiter_registry

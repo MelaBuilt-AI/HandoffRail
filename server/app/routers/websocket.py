@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 import structlog
@@ -175,7 +176,7 @@ async def _heartbeat_loop(manager: ConnectionManager, connection_id: str) -> Non
 
 async def publish_event(
     event_type: str,
-    data: dict,
+    data: dict[str, Any],
     packet_id: str = "",
     tenant_id: str = "default",
 ) -> None:

@@ -70,7 +70,7 @@ class Subscription:
         elif kind == "agent":
             self.agent_ids.discard(value)
 
-    def matches(self, event: dict) -> bool:
+    def matches(self, event: dict[str, Any]) -> bool:
         """Check if this subscription matches an event."""
         # Empty subscription = receive all events
         if not self.statuses and not self.packet_ids and not self.agent_ids:
@@ -260,7 +260,7 @@ class ConnectionManager:
                     channel=channel,
                 )
 
-    async def broadcast(self, event: dict, tenant_id: str | None = None) -> None:
+    async def broadcast(self, event: dict[str, Any], tenant_id: str | None = None) -> None:
         """Broadcast an event to all matching subscribers.
 
         If tenant_id is provided, only broadcast to connections for that tenant.

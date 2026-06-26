@@ -2,7 +2,7 @@
 
 > Session-continuity middleware for multi-agent AI workflows
 
-[![Tests](https://img.shields.io/badge/tests-379%20passing-brightgreen)](https://github.com/MelaBuilt-AI/handoffrail) [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://python.org) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Docker](https://img.shields.io/badge/docker-ready-2496ED)](https://hub.docker.com)
+[![Tests](https://img.shields.io/badge/tests-430%20passing-brightgreen)](https://github.com/MelaBuilt-AI/HandoffRail) [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://python.org) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Docker](https://img.shields.io/badge/docker-ready-2496ED)](https://hub.docker.com)
 
 When Agent A finishes its part and hands off to Agent B (or a human), the full context — decisions, pending actions, dependencies, conversation state — survives the transition intact. **No context loss, no repetition, no dropped threads.**
 
@@ -18,7 +18,7 @@ HandoffRail fixes this with **structured handoff packets** — validated JSON pa
 
 ```bash
 # Clone & install
-git clone https://github.com/MelaBuilt-AI/handoffrail.git
+git clone https://github.com/MelaBuilt-AI/HandoffRail.git
 cd handoffrail/server && pip install -e ".[dev]"
 
 # Start the API
@@ -148,7 +148,7 @@ Self-host is always free. Cloud tiers add managed infrastructure and higher limi
 
 ```bash
 python3 -m pytest tests/ -v
-# 379 tests passing, 24 skipped (optional LangChain/CrewAI deps)
+# 430 tests passing, 24 skipped (optional LangChain/CrewAI deps)
 ```
 
 ## Tech Stack

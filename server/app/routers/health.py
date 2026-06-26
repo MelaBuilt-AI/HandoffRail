@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import structlog
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.database import async_session
@@ -23,8 +24,8 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok", "service": "handoffrail"}
 
 
-@router.get("/ready")
-async def readiness_check() -> dict[str, str | bool]:
+@router.get("/ready", response_model=None)
+async def readiness_check() -> dict[str, str | bool] | JSONResponse:
     """Readiness probe — checks if the database connection is working."""
     try:
         async with async_session() as session:
@@ -38,8 +39,6 @@ async def readiness_check() -> dict[str, str | bool]:
         return {"status": "ready", "service": "handoffrail", "db": True}
     else:
         # Return 503 Service Unavailable
-        from fastapi.responses import JSONResponse
-
         return JSONResponse(
             status_code=503,
             content={"status": "not_ready", "service": "handoffrail", "db": False},

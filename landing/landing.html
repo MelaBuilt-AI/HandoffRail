@@ -687,7 +687,8 @@
         <li><a href="#features">Features</a></li>
         <li><a href="#code">Code</a></li>
         <li><a href="#pricing">Pricing</a></li>
-        <li><a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://github.com/MelaBuilt-AI/HandoffRail" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://pypi.org/project/handoffrail-sdk/" target="_blank" rel="noopener">PyPI</a></li>
       </ul>
       <a href="#get-started" class="nav-cta">Get Started →</a>
       <button class="nav-hamburger" aria-label="Menu" onclick="document.querySelector('.nav-mobile').classList.toggle('open')">☰</button>
@@ -698,7 +699,7 @@
     <a href="#features">Features</a>
     <a href="#code">Code</a>
     <a href="#pricing">Pricing</a>
-    <a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/MelaBuilt-AI/HandoffRail" target="_blank" rel="noopener">GitHub</a>
     <a href="#get-started" class="nav-cta" style="text-align:center;">Get Started</a>
   </div>
 
@@ -707,7 +708,7 @@
     <div class="container hero-content">
       <div class="hero-badge">
         <span class="dot"></span>
-        Open Source &middot; v0.1 &middot; 379 Tests Passing
+        Open Source &middot; v0.1.0 &middot; 430 Tests Passing &middot; PyPI Live
       </div>
       <h1>Zero Context Loss<br>Between <span class="gradient-text">AI Agents</span></h1>
       <p class="hero-subtitle">
@@ -715,14 +716,20 @@
       </p>
       <div class="hero-actions">
         <a href="#quickstart" class="btn-primary">⚡ Get Started</a>
-        <a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener" class="btn-secondary">
+        <a href="https://github.com/MelaBuilt-AI/HandoffRail" target="_blank" rel="noopener" class="btn-secondary">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.605-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12"/></svg>
           View on GitHub
+        </a>
+        <a href="https://pypi.org/project/handoffrail-sdk/" target="_blank" rel="noopener" class="btn-secondary" style="border-color: var(--accent-secondary);">
+          📦 PyPI
+        </a>
+        <a href="https://ghcr.io/melabuilt-ai/handoffrail" target="_blank" rel="noopener" class="btn-secondary" style="border-color: var(--accent-tertiary);">
+          🐳 Docker
         </a>
       </div>
       <div class="hero-stats">
         <div class="hero-stat">
-          <div class="hero-stat-value gradient-text">379</div>
+          <div class="hero-stat-value gradient-text">430</div>
           <div class="hero-stat-label">Tests Passing</div>
         </div>
         <div class="hero-stat">
@@ -996,8 +1003,9 @@ tool = HandoffRailTool(client=client)</pre></div>
           <div class="quickstart-content">
             <h4>Clone & Install</h4>
             <p>Get the code and install the server with dev dependencies.</p>
-            <div class="quickstart-code">git clone https://github.com/MelaBuilt-AI/handoffrail.git
-cd handoffrail/server && pip install -e ".[dev]"</div>
+            <div class="quickstart-code">git clone https://github.com/MelaBuilt-AI/HandoffRail.git
+cd handoffrail/server && pip install -e ".[dev]"
+pip install handoffrail-sdk  # SDK from PyPI</div>
           </div>
         </div>
         <div class="quickstart-step">
@@ -1051,7 +1059,7 @@ packet = client.create_packet(
             <li><span class="cross">✗</span> Webhooks</li>
             <li><span class="cross">✗</span> Audit trail</li>
           </ul>
-          <a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener" class="pricing-cta outline">Self-Host Free</a>
+          <a href="https://github.com/MelaBuilt-AI/HandoffRail" target="_blank" rel="noopener" class="pricing-cta outline">Self-Host Free</a>
         </div>
         <!-- Pro -->
         <div class="pricing-card featured">
@@ -1101,8 +1109,8 @@ packet = client.create_packet(
         <h2>Ready to eliminate context loss?</h2>
         <p>Get started in under 5 minutes. Open source, self-hosted, production-ready.</p>
         <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
-          <a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener" class="btn-primary">⚡ Get Started on GitHub</a>
-          <a href="docs/quickstart.html" class="btn-secondary">📖 Read the Docs</a>
+          <a href="https://github.com/MelaBuilt-AI/HandoffRail" target="_blank" rel="noopener" class="btn-primary">⚡ Get Started on GitHub</a>
+          <a href="https://pypi.org/project/handoffrail-sdk/" target="_blank" rel="noopener" class="btn-secondary">📦 Install from PyPI</a>
         </div>
       </div>
     </div>
@@ -1117,9 +1125,9 @@ packet = client.create_packet(
       </div>
       <ul class="footer-links">
         <li><a href="docs/quickstart.html">Docs</a></li>
-        <li><a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="https://github.com/MelaBuilt-AI/HandoffRail" target="_blank" rel="noopener">GitHub</a></li>
         <li><a href="#pricing">Pricing</a></li>
-        <li><a href="https://github.com/MelaBuilt-AI/handoffrail/issues" target="_blank" rel="noopener">Issues</a></li>
+        <li><a href="https://github.com/MelaBuilt-AI/HandoffRail/issues" target="_blank" rel="noopener">Issues</a></li>
       </ul>
       <div class="footer-copy">&copy; 2026 MelaBuilt AI. MIT License.</div>
     </div>

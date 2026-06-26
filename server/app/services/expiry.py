@@ -34,7 +34,7 @@ async def _expire_packet(packet: Packet, session: AsyncSession) -> None:
         validate_transition(packet.status, "expired")
     except Exception:
         # Already terminal or invalid state — skip
-        logger.debug("skip_expire", packet_id=packet.id, status=packet.status)
+        logger.debug("skip_expire", packet_id=packet.id, status=packet.status)  # type: ignore[call-arg]
         return
 
     packet.status = "expired"
@@ -49,7 +49,7 @@ async def _expire_packet(packet: Packet, session: AsyncSession) -> None:
         timestamp=datetime.now(UTC),
     )
     session.add(event)
-    logger.info("packet_expired", packet_id=packet.id, previous_status=packet.status)
+    logger.info("packet_expired", packet_id=packet.id, previous_status=packet.status)  # type: ignore[call-arg]
 
 
 async def check_and_expire_packets() -> int:
@@ -90,13 +90,13 @@ async def check_and_expire_packets() -> int:
 
 async def expiry_task() -> None:
     """Background task that periodically checks for expired packets."""
-    logger.info("expiry_task_started", check_interval=CHECK_INTERVAL_SECONDS)
+    logger.info("expiry_task_started", check_interval=CHECK_INTERVAL_SECONDS)  # type: ignore[call-arg]
 
     while True:
         try:
             count = await check_and_expire_packets()
             if count > 0:
-                logger.info("expiry_task_run", expired_count=count)
+                logger.info("expiry_task_run", expired_count=count)  # type: ignore[call-arg]
         except Exception:
             logger.exception("expiry_task_error")
 

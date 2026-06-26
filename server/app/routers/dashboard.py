@@ -6,6 +6,7 @@ Provides aggregate statistics for the web dashboard.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/api/v1/stats", tags=["stats"])
 
 
 @router.get("")
-async def get_stats(db: AsyncSession = Depends(get_db)) -> dict:
+async def get_stats(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """Get aggregate statistics for the dashboard.
 
     Returns packet counts by status, recent activity, HITL queue depth,

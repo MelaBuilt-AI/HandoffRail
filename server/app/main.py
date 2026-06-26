@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import structlog
 from fastapi import FastAPI
@@ -48,7 +49,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Wire Redis events to WebSocket connection manager
         manager = get_connection_manager()
 
-        async def on_redis_event(event: dict) -> None:
+        async def on_redis_event(event: dict[str, Any]) -> None:
             """Relay events from Redis to local WebSocket connections."""
             await manager.broadcast(event)
 

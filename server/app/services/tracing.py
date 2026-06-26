@@ -116,7 +116,7 @@ def trace_packet_operation(
             def set_attribute(self, key: str, value: Any) -> None:
                 pass
 
-            def add_event(self, name: str, attributes: dict | None = None) -> None:
+            def add_event(self, name: str, attributes: dict[str, Any] | None = None) -> None:
                 pass
 
             def record_exception(self, exc: Exception) -> None:
@@ -160,7 +160,7 @@ def trace_span(
             def set_attribute(self, key: str, value: Any) -> None:
                 pass
 
-            def add_event(self, name: str, attributes: dict | None = None) -> None:
+            def add_event(self, name: str, attributes: dict[str, Any] | None = None) -> None:
                 pass
 
             def record_exception(self, exc: Exception) -> None:

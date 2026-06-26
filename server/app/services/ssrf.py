@@ -53,7 +53,7 @@ def _resolve_hostname(hostname: str) -> list[str]:
     try:
         # Use getaddrinfo for dual-stack resolution
         results = socket.getaddrinfo(hostname, None)
-        return [r[4][0] for r in results]
+        return [str(r[4][0]) for r in results]
     except socket.gaierror:
         return []
 
