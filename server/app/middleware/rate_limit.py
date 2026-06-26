@@ -1,17 +1,11 @@
-"""HandoffRail API Server — Tier-based rate limiting and quota enforcement middleware.
+"""HandoffRail API Server — Redis-backed rate limiting with in-memory fallback.
 
-Per API key rate limiting with tier-based limits:
-  - Free: 100 req/hr
-  - Pro: 1000 req/hr
-  - Business: 10000 req/hr
+Replaces the pure in-memory RateLimitRegistry with Redis INCR + EXPIRE
+for atomic, horizontally-scalable rate limiting. Falls back to the
+original in-memory implementation when Redis is unavailable.
 
-Tier quotas (enforced on resource creation):
-  - Free: 5 handoffs/day, 2 agents, 1 API key, 64KB packets
-  - Pro: unlimited handoffs, 10 agents, 5 API keys, 256KB packets
-  - Business: unlimited handoffs, 50 agents, 25 API keys, 1MB packets
-
-Adds X-RateLimit-* headers to all responses.
-Unauthenticated requests are rate-limited at the Free tier per client IP.
+Rate limiting: per API key, tier-based requests per hour.
+Quota enforcement: per tenant, daily handoff counts.
 """
 
 from __future__ import annotations
@@ -23,6 +17,8 @@ from threading import Lock
 import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+
+from app.services.redis_pubsub import get_pubsub_manager
 
 logger = structlog.get_logger()
 
@@ -63,15 +59,7 @@ TIER_QUOTAS: dict[str, dict[str, int | bool]] = {
 
 
 def get_tier_quota(tier: str, quota_name: str) -> int | bool:
-    """Get a specific quota value for a tier.
-
-    Args:
-        tier: Tier name (free, pro, business).
-        quota_name: Quota key (handoffs_per_day, max_agents, etc.).
-
-    Returns:
-        The quota value, or the free-tier default if tier is unknown.
-    """
+    """Get a specific quota value for a tier."""
     quotas = TIER_QUOTAS.get(tier, TIER_QUOTAS[DEFAULT_TIER])
     return quotas.get(quota_name, TIER_QUOTAS[DEFAULT_TIER].get(quota_name, 0))
 
@@ -80,11 +68,11 @@ def get_tier_quota(tier: str, quota_name: str) -> int | bool:
 EXEMPT_PATHS = {"/health", "/ready", "/metrics", "/docs", "/openapi.json", "/redoc"}
 
 
-class RateLimitRegistry:
-    """Thread-safe in-memory rate limit counter registry.
+# ── In-memory fallback (used when Redis is unavailable) ─────────────────────────
 
-    Shared between the middleware and tests to allow resetting between test runs.
-    """
+
+class InMemoryRateLimitRegistry:
+    """Thread-safe in-memory rate limit counter registry (fallback only)."""
 
     def __init__(self) -> None:
         self._windows: dict[str, dict[float, int]] = defaultdict(dict)
@@ -109,21 +97,12 @@ class RateLimitRegistry:
                 del key_windows[k]
 
     def reset(self) -> None:
-        """Reset all counters. Used between tests."""
         with self._lock:
             self._windows.clear()
 
 
-# Module-level registry — shared instance for tests to reset
-rate_limiter_registry = RateLimitRegistry()
-
-
-class DailyHandoffCounter:
-    """Thread-safe in-memory daily handoff counter per tenant.
-
-    Tracks handoff packet creation counts per tenant per day to enforce
-    tier-based daily handoff limits.
-    """
+class InMemoryDailyHandoffCounter:
+    """Thread-safe in-memory daily handoff counter (fallback only)."""
 
     def __init__(self) -> None:
         self._counts: dict[str, dict[str, int]] = defaultdict(dict)
@@ -148,19 +127,104 @@ class DailyHandoffCounter:
                 del tenant_counts[k]
 
     def reset(self) -> None:
-        """Reset all counters. Used between tests."""
         with self._lock:
             self._counts.clear()
 
 
-# Module-level daily counter
-daily_handoff_counter = DailyHandoffCounter()
+# ── Redis-backed implementations ───────────────────────────────────────────────
+
+
+REDIS_RATE_LIMIT_PREFIX = "hr:ratelimit"
+REDIS_DAILY_HANDOFF_PREFIX = "hr:daily_handoff"
+
+
+async def redis_increment_rate_limit(key_id: str, window_start: float, window_seconds: int) -> int | None:
+    """Atomically increment rate limit counter in Redis.
+
+    Uses INCR + EXPIRE for atomic fixed-window counting.
+    Returns the new count, or None if Redis is unavailable.
+    """
+    pubsub = get_pubsub_manager()
+    if not pubsub.is_connected or pubsub._redis is None:
+        return None
+
+    try:
+        redis_key = f"{REDIS_RATE_LIMIT_PREFIX}:{key_id}:{int(window_start)}"
+        count = await pubsub._redis.incr(redis_key)
+        # Set expiry on first increment in the window
+        if count == 1:
+            await pubsub._redis.expire(redis_key, window_seconds + 60)  # +60s buffer
+        return count
+    except Exception as exc:
+        logger.warning("redis_rate_limit_error", error=str(exc), key_id=key_id)
+        return None
+
+
+async def redis_get_rate_limit_count(key_id: str, window_start: float) -> int | None:
+    """Get current rate limit count from Redis. Returns None if unavailable."""
+    pubsub = get_pubsub_manager()
+    if not pubsub.is_connected or pubsub._redis is None:
+        return None
+
+    try:
+        redis_key = f"{REDIS_RATE_LIMIT_PREFIX}:{key_id}:{int(window_start)}"
+        count = await pubsub._redis.get(redis_key)
+        return int(count) if count is not None else 0
+    except Exception as exc:
+        logger.warning("redis_rate_limit_get_error", error=str(exc), key_id=key_id)
+        return None
+
+
+async def redis_increment_daily_handoff(tenant_id: str, day_key: str) -> int | None:
+    """Atomically increment daily handoff counter in Redis. Returns None if unavailable."""
+    pubsub = get_pubsub_manager()
+    if not pubsub.is_connected or pubsub._redis is None:
+        return None
+
+    try:
+        redis_key = f"{REDIS_DAILY_HANDOFF_PREFIX}:{tenant_id}:{day_key}"
+        count = await pubsub._redis.incr(redis_key)
+        if count == 1:
+            # Expire after 2 days (86400 * 2 seconds)
+            await pubsub._redis.expire(redis_key, 172800)
+        return count
+    except Exception as exc:
+        logger.warning("redis_daily_handoff_error", error=str(exc), tenant_id=tenant_id)
+        return None
+
+
+async def redis_get_daily_handoff_count(tenant_id: str, day_key: str) -> int | None:
+    """Get daily handoff count from Redis. Returns None if unavailable."""
+    pubsub = get_pubsub_manager()
+    if not pubsub.is_connected or pubsub._redis is None:
+        return None
+
+    try:
+        redis_key = f"{REDIS_DAILY_HANDOFF_PREFIX}:{tenant_id}:{day_key}"
+        count = await pubsub._redis.get(redis_key)
+        return int(count) if count is not None else 0
+    except Exception as exc:
+        logger.warning("redis_daily_handoff_get_error", error=str(exc), tenant_id=tenant_id)
+        return None
+
+
+# ── Module-level fallback instances (shared for tests) ─────────────────────────
+
+rate_limiter_registry = InMemoryRateLimitRegistry()
+daily_handoff_counter = InMemoryDailyHandoffCounter()
+
+# ── Backward-compatible aliases (used by tests and external code) ────────────────
+# The original class names are preserved as aliases so existing imports
+# (RateLimitRegistry, DailyHandoffCounter) continue to work.
+RateLimitRegistry = InMemoryRateLimitRegistry
+DailyHandoffCounter = InMemoryDailyHandoffCounter
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Per-API-key, tier-based rate limiting middleware.
 
-    Tracks request counts per API key in memory using fixed time windows.
+    Uses Redis for atomic counting when available, falls back to
+    in-memory counters when Redis is unavailable.
     Adds X-RateLimit-* headers to all responses.
     """
 
@@ -176,44 +240,54 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             return response
 
-        # Try to get the API key info from the request state (set by auth middleware)
-        # or directly from the X-API-Key header
+        # Get API key info from request state or headers
         api_key = getattr(request.state, "api_key", None)
 
         if api_key is not None:
             tier = getattr(api_key, "tier", DEFAULT_TIER)
             key_id = api_key.id
         else:
-            # Try to look up the API key from the header for rate limiting purposes
-            # This allows rate limiting to work even on unauthenticated endpoints
             raw_key = request.headers.get("X-API-Key")
             if raw_key:
-                # Hash the key and look it up in the DB would require async,
-                # so we use the key hash prefix as a rate limit key
                 from app.middleware.auth import hash_key
 
                 key_hash = hash_key(raw_key)
                 key_id = f"key:{key_hash[:16]}"
-                # We can't know the tier without DB lookup, so default to free
                 tier = DEFAULT_TIER
             else:
-                # Use client IP as key for unauthenticated requests
                 tier = DEFAULT_TIER
                 key_id = f"ip:{request.client.host if request.client else 'unknown'}"
 
         limit = self.tier_limits.get(tier, self.tier_limits[DEFAULT_TIER])
 
-        # Check rate limit
+        # Calculate window
         current_time = time.time()
         window_key = int(current_time // RATE_LIMIT_WINDOW_SECONDS)
         window_start = float(window_key * RATE_LIMIT_WINDOW_SECONDS)
-
-        # Cleanup old windows
-        self.registry.cleanup_old(key_id, window_start, RATE_LIMIT_WINDOW_SECONDS * 2)
-
-        current_count = self.registry.get_count(key_id, window_start)
-        remaining = max(0, limit - current_count)
         reset_seconds = int(window_start + RATE_LIMIT_WINDOW_SECONDS - current_time)
+
+        # Try Redis first, fall back to in-memory
+        current_count = await redis_get_rate_limit_count(key_id, window_start)
+
+        if current_count is not None:
+            # Redis is available — use atomic INCR
+            new_count = await redis_increment_rate_limit(
+                key_id, window_start, RATE_LIMIT_WINDOW_SECONDS
+            )
+            if new_count is not None:
+                current_count = new_count - 1  # What it was before this request
+            else:
+                # Redis failed mid-operation — fall back to in-memory
+                self.registry.cleanup_old(key_id, window_start, RATE_LIMIT_WINDOW_SECONDS * 2)
+                current_count = self.registry.get_count(key_id, window_start)
+                self.registry.increment(key_id, window_start)
+        else:
+            # Redis unavailable — use in-memory
+            self.registry.cleanup_old(key_id, window_start, RATE_LIMIT_WINDOW_SECONDS * 2)
+            current_count = self.registry.get_count(key_id, window_start)
+            self.registry.increment(key_id, window_start)
+
+        remaining = max(0, limit - current_count - 1)
 
         if current_count >= limit:
             logger.warning(
@@ -234,14 +308,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             response.headers["X-RateLimit-Tier"] = tier
             return response
 
-        # Increment counter
-        self.registry.increment(key_id, window_start)
-
         response = await call_next(request)
 
         # Add rate limit headers
         response.headers["X-RateLimit-Limit"] = str(limit)
-        response.headers["X-RateLimit-Remaining"] = str(remaining - 1)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
         response.headers["X-RateLimit-Reset"] = str(reset_seconds)
         response.headers["X-RateLimit-Tier"] = tier
 
