@@ -1,0 +1,416 @@
+/* HandoffRail Dashboard — Application Logic */
+
+const API_BASE = '/api/v1';
+let ws = null;
+let currentView = 'packets';
+let currentPacketId = null;
+let allPackets = [];
+let offset = 0;
+const LIMIT = 50;
+
+// ── View Switching ────────────────────────────────────────────────────────────
+
+document.querySelectorAll('.nav-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const view = link.dataset.view;
+        switchView(view);
+    });
+});
+
+function switchView(view) {
+    currentView = view;
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.querySelector(`.nav-link[data-view="${view}"]`)?.classList.add('active');
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById(`view-${view}`)?.classList.add('active');
+
+    if (view === 'packets') loadPackets();
+    if (view === 'hitl') loadHITL();
+    if (view === 'stats') loadStats();
+}
+
+// ── WebSocket ──────────────────────────────────────────────────────────────────
+
+function connectWS() {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${protocol}//${location.host}/ws`;
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+        document.getElementById('ws-status').className = 'status-dot connected';
+        document.getElementById('ws-label').textContent = 'Connected';
+    };
+
+    ws.onclose = () => {
+        document.getElementById('ws-status').className = 'status-dot disconnected';
+        document.getElementById('ws-label').textContent = 'Disconnected';
+        setTimeout(connectWS, 3000);
+    };
+
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            handleWSEvent(data);
+        } catch (e) {
+            console.error('WS parse error:', e);
+        }
+    };
+
+    ws.onerror = () => {
+        ws.close();
+    };
+}
+
+function handleWSEvent(event) {
+    if (event.type === 'ping') return; // heartbeat
+    if (event.type === 'connected') return;
+    if (event.type === 'subscribed') return;
+    if (event.type === 'unsubscribed') return;
+
+    // Add to live feed
+    addToFeed(event);
+
+    // Auto-refresh current view
+    if (currentView === 'packets' || currentView === 'hitl') {
+        debounceRefresh();
+    }
+    if (currentView === 'stats') {
+        loadStats();
+    }
+}
+
+let refreshTimer = null;
+function debounceRefresh() {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+        if (currentView === 'packets') loadPackets();
+        if (currentView === 'hitl') loadHITL();
+    }, 500);
+}
+
+// ── Live Feed ──────────────────────────────────────────────────────────────────
+
+function addToFeed(event) {
+    const feed = document.getElementById('live-feed');
+    const emptyMsg = feed.querySelector('.feed-empty');
+    if (emptyMsg) emptyMsg.remove();
+
+    const time = event.timestamp ? new Date(event.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+    const typeColor = getTypeColor(event.type);
+
+    const el = document.createElement('div');
+    el.className = 'feed-event';
+    el.innerHTML = `
+        <span class="feed-time">${time}</span>
+        <span class="feed-type" style="color:${typeColor}">${event.type}</span>
+        <span class="feed-detail">${event.packet_id?.substring(0, 8) || ''}… ${event.data?.status || ''}</span>
+    `;
+
+    feed.insertBefore(el, feed.firstChild);
+
+    // Keep max 100 events
+    while (feed.children.length > 100) {
+        feed.removeChild(feed.lastChild);
+    }
+}
+
+function getTypeColor(type) {
+    if (type.includes('created')) return '#60a5fa';
+    if (type.includes('claimed')) return '#3b82f6';
+    if (type.includes('completed')) return '#22c55e';
+    if (type.includes('failed')) return '#ef4444';
+    if (type.includes('expired')) return '#6b7280';
+    if (type.includes('hitl')) return '#e879f9';
+    if (type.includes('chained')) return '#f59e0b';
+    return '#94a3b8';
+}
+
+document.getElementById('btn-clear-feed')?.addEventListener('click', () => {
+    const feed = document.getElementById('live-feed');
+    feed.innerHTML = '<div class="feed-empty">Waiting for events...</div>';
+});
+
+// ── Packets List ───────────────────────────────────────────────────────────────
+
+async function loadPackets() {
+    const status = document.getElementById('filter-status')?.value || '';
+    const search = document.getElementById('filter-search')?.value || '';
+    let url = `${API_BASE}/packets?limit=${LIMIT}&offset=${offset}`;
+    if (status) url += `&status=${status}`;
+
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+        allPackets = data.packets || [];
+        renderPackets(allPackets, search);
+        renderPagination(data.total || 0);
+    } catch (e) {
+        console.error('Failed to load packets:', e);
+    }
+}
+
+function renderPackets(packets, search = '') {
+    const tbody = document.getElementById('packets-tbody');
+    if (!packets.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No packets found</td></tr>';
+        return;
+    }
+
+    let filtered = packets;
+    if (search) {
+        const q = search.toLowerCase();
+        filtered = packets.filter(p =>
+            p.id.toLowerCase().includes(q) ||
+            (p.metadata?.source_agent?.name || '').toLowerCase().includes(q) ||
+            (p.metadata?.target_agent?.name || '').toLowerCase().includes(q)
+        );
+    }
+
+    tbody.innerHTML = filtered.map(p => {
+        const src = p.metadata?.source_agent?.name || p.metadata?.source_agent?.id || '—';
+        const tgt = p.metadata?.target_agent?.name || p.metadata?.target_agent?.id || '—';
+        const created = new Date(p.created_at).toLocaleString();
+        const priorityClass = `priority-${p.metadata?.priority || 'normal'}`;
+        return `<tr>
+            <td><code title="${p.id}">${p.id.substring(0, 8)}…</code></td>
+            <td><span class="status-badge status-${p.status}">${p.status.replace('_', ' ')}</span></td>
+            <td>${src} → ${tgt}</td>
+            <td><span class="${priorityClass}">${p.metadata?.priority || 'normal'}</span></td>
+            <td>${created}</td>
+            <td><button class="btn btn-sm btn-primary" onclick="viewDetail('${p.id}')">View</button></td>
+        </tr>`;
+    }).join('');
+}
+
+function renderPagination(total) {
+    const el = document.getElementById('packets-pagination');
+    if (!el) return;
+    const pages = Math.ceil(total / LIMIT);
+    if (pages <= 1) { el.innerHTML = ''; return; }
+
+    let html = '';
+    if (offset > 0) html += `<button class="btn btn-sm btn-secondary" onclick="goPage(${offset - LIMIT})">← Prev</button>`;
+    html += `<span style="color:var(--text-muted)">Page ${Math.floor(offset / LIMIT) + 1} of ${pages}</span>`;
+    if (offset + LIMIT < total) html += `<button class="btn btn-sm btn-secondary" onclick="goPage(${offset + LIMIT})">Next →</button>`;
+    el.innerHTML = html;
+}
+
+function goPage(newOffset) {
+    offset = newOffset;
+    loadPackets();
+}
+
+document.getElementById('btn-refresh')?.addEventListener('click', loadPackets);
+document.getElementById('filter-status')?.addEventListener('change', () => { offset = 0; loadPackets(); });
+document.getElementById('filter-search')?.addEventListener('input', () => {
+    renderPackets(allPackets, document.getElementById('filter-search')?.value || '');
+});
+
+// ── Packet Detail ──────────────────────────────────────────────────────────────
+
+async function viewDetail(id) {
+    currentPacketId = id;
+    try {
+        const [packetRes, historyRes] = await Promise.all([
+            fetch(`${API_BASE}/packets/${id}`),
+            fetch(`${API_BASE}/packets/${id}/history`),
+        ]);
+        const packet = await packetRes.json();
+        const history = await historyRes.json();
+
+        document.getElementById('detail-title').textContent = `Packet ${id.substring(0, 8)}…`;
+
+        // Metadata
+        const meta = packet.metadata || {};
+        document.getElementById('detail-meta').innerHTML = fields([
+            ['ID', packet.id],
+            ['Status', packet.status],
+            ['Version', packet.version],
+            ['Source', `${meta.source_agent?.name || '—'} (${meta.source_agent?.id || '—'})`],
+            ['Target', `${meta.target_agent?.name || '—'} (${meta.target_agent?.id || '—'})`],
+            ['Priority', meta.priority || 'normal'],
+            ['Tags', (meta.tags || []).join(', ') || '—'],
+            ['Created', new Date(packet.created_at).toLocaleString()],
+            ['Updated', new Date(packet.updated_at).toLocaleString()],
+        ]);
+
+        // Context
+        const ctx = packet.context || {};
+        document.getElementById('detail-context').innerHTML = `
+            <div class="field"><span class="field-label">Summary</span><span class="field-value">${ctx.summary || '—'}</span></div>
+            <div class="field"><span class="field-label">Messages</span><span class="field-value">${(ctx.conversation_state || []).length}</span></div>
+            <div class="field"><span class="field-label">Artifacts</span><span class="field-value">${(ctx.artifacts || []).length}</span></div>
+        `;
+
+        // Decisions
+        const decisions = packet.decisions || [];
+        document.getElementById('detail-decisions').innerHTML = decisions.length
+            ? decisions.map(d => `<div class="field"><span class="field-label">${d.decision}</span><span class="field-value">${d.rationale || '—'}</span></div>`).join('')
+            : '<div class="empty-state">No decisions</div>';
+
+        // Actions
+        const actions = packet.actions || {};
+        const pendingCount = (actions.pending || []).length;
+        const completedCount = (actions.completed || []).length;
+        const failedCount = (actions.failed || []).length;
+        document.getElementById('detail-actions').innerHTML = `
+            <div class="field"><span class="field-label">Pending</span><span class="field-value">${pendingCount}</span></div>
+            <div class="field"><span class="field-label">Completed</span><span class="field-value">${completedCount}</span></div>
+            <div class="field"><span class="field-label">Failed</span><span class="field-value">${failedCount}</span></div>
+        `;
+
+        // History timeline
+        const events = history.events || [];
+        document.getElementById('detail-history').innerHTML = events.length
+            ? events.map(e => `
+                <div class="timeline-event">
+                    <div class="timeline-time">${new Date(e.timestamp).toLocaleString()}</div>
+                    <div>
+                        <div class="timeline-type">${e.event_type}</div>
+                        <div class="timeline-actor">${e.actor || '—'}</div>
+                    </div>
+                </div>
+            `).join('')
+            : '<div class="empty-state">No events</div>';
+
+        // Raw JSON
+        document.getElementById('detail-json').textContent = JSON.stringify(packet, null, 2);
+
+        switchView('detail');
+    } catch (e) {
+        console.error('Failed to load detail:', e);
+    }
+}
+
+function fields(pairs) {
+    return pairs.map(([k, v]) => `<div class="field"><span class="field-label">${k}</span><span class="field-value">${v}</span></div>`).join('');
+}
+
+// ── HITL Queue ─────────────────────────────────────────────────────────────────
+
+async function loadHITL() {
+    try {
+        const res = await fetch(`${API_BASE}/packets/awaiting`);
+        const data = await res.json();
+        const packets = data.packets || [];
+        const container = document.getElementById('hitl-list');
+
+        if (!packets.length) {
+            container.innerHTML = '<div class="empty-state">No packets awaiting human review</div>';
+            return;
+        }
+
+        container.innerHTML = packets.map(p => {
+            const hitl = p.hitl || {};
+            const meta = p.metadata || {};
+            const options = hitl.options || [];
+            return `<div class="hitl-card">
+                <h4>Packet ${p.id.substring(0, 8)}…</h4>
+                <div class="hitl-meta">From: ${meta.source_agent?.name || '—'} → Human • Priority: ${meta.priority || 'normal'}</div>
+                <div class="hitl-question">${hitl.question || 'No question specified'}</div>
+                <div class="hitl-meta">Reason: ${hitl.reason || '—'}</div>
+                <div class="hitl-options">
+                    ${options.map(opt => `<button class="btn btn-sm btn-primary" onclick="respondHITL('${p.id}', '${opt.replace(/'/g, "\\'")}')">${opt}</button>`).join('')}
+                    <button class="btn btn-sm btn-secondary" onclick="showHITLModal('${p.id}')">Custom Response</button>
+                </div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        console.error('Failed to load HITL:', e);
+    }
+}
+
+async function respondHITL(packetId, response) {
+    const respondedBy = prompt('Your name:', 'dashboard-user') || 'dashboard-user';
+    try {
+        await fetch(`${API_BASE}/packets/${packetId}/respond`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ response, responded_by: respondedBy }),
+        });
+        loadHITL();
+    } catch (e) {
+        console.error('HITL response failed:', e);
+    }
+}
+
+function showHITLModal(packetId) {
+    const modal = document.getElementById('hitl-modal');
+    modal.classList.remove('hidden');
+    document.getElementById('hitl-modal-question').textContent = `Respond to packet ${packetId.substring(0, 8)}…`;
+    document.getElementById('hitl-modal-response').value = '';
+    document.getElementById('hitl-modal-responded-by').value = '';
+
+    document.getElementById('hitl-modal-submit').onclick = async () => {
+        const response = document.getElementById('hitl-modal-response').value;
+        const respondedBy = document.getElementById('hitl-modal-responded-by').value || 'dashboard-user';
+        if (!response) return;
+        try {
+            await fetch(`${API_BASE}/packets/${packetId}/respond`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ response, responded_by: respondedBy }),
+            });
+            modal.classList.add('hidden');
+            loadHITL();
+        } catch (e) {
+            console.error('HITL response failed:', e);
+        }
+    };
+
+    document.getElementById('hitl-modal-cancel').onclick = () => modal.classList.add('hidden');
+}
+
+// ── Stats ──────────────────────────────────────────────────────────────────────
+
+async function loadStats() {
+    try {
+        const res = await fetch(`${API_BASE}/stats`);
+        const data = await res.json();
+
+        document.getElementById('stat-total').textContent = data.total_packets ?? '—';
+        document.getElementById('stat-24h').textContent = data.packets_last_24h ?? '—';
+        document.getElementById('stat-hitl').textContent = data.hitl_queue_depth ?? '—';
+        document.getElementById('stat-ws').textContent = data.active_ws_connections ?? '—';
+        document.getElementById('stat-claim-time').textContent = data.avg_claim_time_seconds != null
+            ? formatDuration(data.avg_claim_time_seconds)
+            : '—';
+
+        // Status bars
+        const bars = document.getElementById('status-bars');
+        const statuses = data.packets_by_status || {};
+        const total = data.total_packets || 1;
+        const colors = {
+            created: '#60a5fa', claimed: '#3b82f6', in_progress: '#f59e0b',
+            awaiting_human: '#e879f9', completed: '#22c55e', failed: '#ef4444', expired: '#6b7280',
+        };
+
+        bars.innerHTML = Object.entries(statuses).map(([status, count]) => `
+            <div class="status-bar-row">
+                <span class="status-bar-label">${status.replace('_', ' ')}</span>
+                <div class="status-bar-fill">
+                    <div class="status-bar-inner" style="width:${(count / total * 100).toFixed(1)}%; background:${colors[status] || '#94a3b8'}"></div>
+                </div>
+                <span class="status-bar-count">${count}</span>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error('Failed to load stats:', e);
+    }
+}
+
+function formatDuration(seconds) {
+    if (seconds < 60) return `${seconds.toFixed(1)}s`;
+    if (seconds < 3600) return `${(seconds / 60).toFixed(1)}m`;
+    return `${(seconds / 3600).toFixed(1)}h`;
+}
+
+// ── Back button ────────────────────────────────────────────────────────────────
+
+document.getElementById('btn-back')?.addEventListener('click', () => switchView('packets'));
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+
+loadPackets();
+connectWS();

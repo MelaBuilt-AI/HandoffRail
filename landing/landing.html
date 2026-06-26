@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HandoffRail — Zero Context Loss Between AI Agents</title>
+  <meta name="description" content="Session-continuity middleware for multi-agent AI workflows. Structured handoff packets, HITL approval, chain handoffs, and framework adapters for LangChain & CrewAI.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="HandoffRail — Zero Context Loss Between AI Agents">
+  <meta name="twitter:description" content="Session-continuity middleware for multi-agent AI workflows.">
+  <meta property="og:title" content="HandoffRail — Zero Context Loss Between AI Agents">
+  <meta property="og:description" content="Session-continuity middleware for multi-agent AI workflows.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚄</text></svg>">
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --bg-tertiary: #1a1a28;
+      --bg-card: #16161f;
+      --bg-card-hover: #1e1e2e;
+      --border-subtle: #2a2a3d;
+      --border-accent: #6c5ce7;
+      --text-primary: #e8e8f0;
+      --text-secondary: #a0a0b8;
+      --text-muted: #6a6a80;
+      --accent-primary: #6c5ce7;
+      --accent-primary-light: #8b7cf7;
+      --accent-secondary: #00cec9;
+      --accent-tertiary: #fd79a8;
+      --accent-warning: #fdcb6e;
+      --accent-success: #00b894;
+      --gradient-primary: linear-gradient(135deg, #6c5ce7 0%, #00cec9 100%);
+      --gradient-hero: linear-gradient(180deg, #0a0a0f 0%, #12121a 50%, #0a0a0f 100%);
+      --gradient-card: linear-gradient(135deg, rgba(108,92,231,0.08) 0%, rgba(0,206,201,0.04) 100%);
+      --shadow-glow: 0 0 60px rgba(108,92,231,0.15);
+      --shadow-card: 0 4px 24px rgba(0,0,0,0.4);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 24px;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --max-width: 1200px;
+    }
+
+    html { font-size: 16px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    a { color: var(--accent-primary-light); text-decoration: none; transition: color 0.2s; }
+    a:hover { color: var(--accent-secondary); }
+
+    /* ── Utility ──────────────────────────────────────────────────── */
+    .container { max-width: var(--max-width); margin: 0 auto; padding: 0 24px; }
+    .section { padding: 100px 0; }
+    .section-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent-primary);
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 16px;
+    }
+    .section-desc {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      max-width: 640px;
+      line-height: 1.7;
+    }
+    .gradient-text {
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ── Navigation ──────────────────────────────────────────────── */
+    .nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 16px 0;
+      background: rgba(10,10,15,0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-subtle);
+      transition: padding 0.3s, background 0.3s;
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: var(--text-primary);
+    }
+    .nav-brand:hover { color: var(--text-primary); }
+    .nav-brand .logo-icon { font-size: 1.5rem; }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      list-style: none;
+    }
+    .nav-links a {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--text-primary); }
+    .nav-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 0.875rem;
+      font-weight: 600;
+      background: var(--accent-primary);
+      color: #fff;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .nav-cta:hover { background: var(--accent-primary-light); color: #fff; transform: translateY(-1px); }
+    .nav-hamburger { display: none; background: none; border: none; color: var(--text-primary); font-size: 1.5rem; cursor: pointer; }
+    .nav-mobile { display: none; }
+
+    /* ── Hero ─────────────────────────────────────────────────────── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      position: relative;
+      background: var(--gradient-hero);
+      padding-top: 80px;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(circle, rgba(108,92,231,0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 999px;
+      border: 1px solid var(--border-accent);
+      background: rgba(108,92,231,0.08);
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--accent-primary-light);
+      margin-bottom: 24px;
+    }
+    .hero-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-success);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4.25rem);
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 24px;
+      letter-spacing: -0.03em;
+    }
+    .hero-subtitle {
+      font-size: clamp(1.1rem, 2vw, 1.35rem);
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin: 0 auto 40px;
+      line-height: 1.7;
+    }
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      border-radius: var(--radius-md);
+      font-size: 1rem;
+      font-weight: 600;
+      background: var(--gradient-primary);
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.2s;
+      text-decoration: none;
+    }
+    .btn-primary:hover { color: #fff; transform: translateY(-2px); box-shadow: var(--shadow-glow); }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      border-radius: var(--radius-md);
+      font-size: 1rem;
+      font-weight: 600;
+      background: transparent;
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.15s;
+      text-decoration: none;
+    }
+    .btn-secondary:hover { color: var(--text-primary); border-color: var(--accent-primary); transform: translateY(-2px); }
+
+    .hero-stats {
+      display: flex;
+      justify-content: center;
+      gap: 48px;
+      margin-top: 64px;
+      padding-top: 40px;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .hero-stat { text-align: center; }
+    .hero-stat-value {
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .hero-stat-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 500;
+    }
+
+    /* ── How It Works ─────────────────────────────────────────────── */
+    .how-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      margin-top: 64px;
+      position: relative;
+    }
+    .how-grid::before {
+      content: '';
+      position: absolute;
+      top: 60px;
+      left: 16.5%;
+      right: 16.5%;
+      height: 2px;
+      background: var(--gradient-primary);
+      opacity: 0.3;
+    }
+    .how-card {
+      text-align: center;
+      position: relative;
+    }
+    .how-step {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-weight: 700;
+      font-size: 1.25rem;
+      border: 2px solid var(--accent-primary);
+      color: var(--accent-primary);
+      background: var(--bg-primary);
+      position: relative;
+      z-index: 1;
+    }
+    .how-card h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .how-card p {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+
+    /* ── Features ────────────────────────────────────────────────── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-top: 64px;
+    }
+    .feature-card {
+      padding: 32px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-card);
+      transition: border-color 0.2s, background 0.2s, transform 0.15s;
+    }
+    .feature-card:hover {
+      border-color: var(--accent-primary);
+      background: var(--bg-card-hover);
+      transform: translateY(-4px);
+    }
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      margin-bottom: 20px;
+      background: rgba(108,92,231,0.12);
+    }
+    .feature-card h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .feature-card p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* ── Code Examples ────────────────────────────────────────────── */
+    .code-tabs {
+      margin-top: 48px;
+    }
+    .code-tab-list {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 0;
+      padding: 4px;
+      background: var(--bg-tertiary);
+      border-radius: var(--radius-md) var(--radius-md) 0 0;
+      border: 1px solid var(--border-subtle);
+      border-bottom: none;
+      overflow-x: auto;
+    }
+    .code-tab {
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: color 0.2s, background 0.2s;
+      white-space: nowrap;
+    }
+    .code-tab:hover { color: var(--text-secondary); }
+    .code-tab.active {
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+    .code-panel { display: none; }
+    .code-panel.active { display: block; }
+    .code-block {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-top: none;
+      border-radius: 0 0 var(--radius-md) var(--radius-md);
+      padding: 24px;
+      overflow-x: auto;
+    }
+    .code-block pre {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      line-height: 1.7;
+      color: var(--text-primary);
+      white-space: pre;
+      tab-size: 4;
+    }
+    /* Syntax highlight classes */
+    .code-block .kw { color: var(--accent-primary-light); }
+    .code-block .fn { color: var(--accent-secondary); }
+    .code-block .str { color: var(--accent-success); }
+    .code-block .cm { color: var(--text-muted); }
+    .code-block .num { color: var(--accent-warning); }
+    .code-block .op { color: var(--accent-tertiary); }
+
+    /* ── Quick Start ──────────────────────────────────────────────── */
+    .quickstart-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      margin-top: 48px;
+      max-width: 720px;
+    }
+    .quickstart-step {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .quickstart-num {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+      background: var(--accent-primary);
+      color: #fff;
+    }
+    .quickstart-content h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .quickstart-content p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .quickstart-code {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      line-height: 1.6;
+      overflow-x: auto;
+    }
+
+    /* ── Pricing ──────────────────────────────────────────────────── */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-top: 64px;
+    }
+    .pricing-card {
+      padding: 36px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-card);
+      transition: transform 0.15s;
+      position: relative;
+    }
+    .pricing-card:hover { transform: translateY(-4px); }
+    .pricing-card.featured {
+      border-color: var(--accent-primary);
+      background: var(--bg-card-hover);
+      box-shadow: var(--shadow-glow);
+    }
+    .pricing-card.featured::before {
+      content: 'Most Popular';
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 16px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: var(--accent-primary);
+      color: #fff;
+      letter-spacing: 0.05em;
+    }
+    .pricing-tier {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent-primary);
+      margin-bottom: 12px;
+    }
+    .pricing-price {
+      font-size: 2.5rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .pricing-period {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+    .pricing-desc {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .pricing-features {
+      list-style: none;
+      margin-bottom: 32px;
+    }
+    .pricing-features li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      padding: 6px 0;
+    }
+    .pricing-features .check {
+      color: var(--accent-success);
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+    .pricing-features .cross {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      flex-shrink: 0;
+      opacity: 0.5;
+    }
+    .pricing-cta {
+      display: block;
+      text-align: center;
+      padding: 12px 24px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 0.9rem;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .pricing-cta.primary {
+      background: var(--accent-primary);
+      color: #fff;
+    }
+    .pricing-cta.primary:hover { background: var(--accent-primary-light); color: #fff; }
+    .pricing-cta.outline {
+      background: transparent;
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+    }
+    .pricing-cta.outline:hover { border-color: var(--accent-primary); color: var(--text-primary); }
+
+    /* ── CTA Banner ───────────────────────────────────────────────── */
+    .cta-section {
+      padding: 100px 0;
+      text-align: center;
+    }
+    .cta-box {
+      padding: 64px;
+      border-radius: var(--radius-xl);
+      background: var(--gradient-card);
+      border: 1px solid var(--border-accent);
+      box-shadow: var(--shadow-glow);
+    }
+    .cta-box h2 {
+      font-size: clamp(1.75rem, 3vw, 2.5rem);
+      font-weight: 800;
+      margin-bottom: 16px;
+    }
+    .cta-box p {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 500px;
+      margin: 0 auto 32px;
+    }
+
+    /* ── Footer ───────────────────────────────────────────────────── */
+    .footer {
+      padding: 48px 0;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 1rem;
+      color: var(--text-secondary);
+    }
+    .footer-links {
+      display: flex;
+      gap: 24px;
+      list-style: none;
+    }
+    .footer-links a {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .footer-links a:hover { color: var(--text-primary); }
+    .footer-copy {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* ── Responsive ───────────────────────────────────────────────── */
+    @media (max-width: 1024px) {
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+      .pricing-grid { grid-template-columns: repeat(2, 1fr); }
+      .pricing-card:last-child { grid-column: span 2; max-width: 50%; margin: 0 auto; }
+    }
+
+    @media (max-width: 768px) {
+      .section { padding: 64px 0; }
+      .nav-links { display: none; }
+      .nav-hamburger { display: block; }
+      .nav-mobile {
+        display: none;
+        position: fixed;
+        top: 64px;
+        left: 0;
+        right: 0;
+        background: var(--bg-secondary);
+        border-bottom: 1px solid var(--border-subtle);
+        padding: 16px 24px;
+        z-index: 99;
+      }
+      .nav-mobile.open { display: flex; flex-direction: column; gap: 16px; }
+      .nav-mobile a { color: var(--text-secondary); font-size: 1rem; font-weight: 500; }
+      .hero h1 { font-size: 2.5rem; }
+      .hero-stats { gap: 24px; flex-wrap: wrap; }
+      .how-grid { grid-template-columns: 1fr; gap: 48px; }
+      .how-grid::before { display: none; }
+      .features-grid { grid-template-columns: 1fr; }
+      .pricing-grid { grid-template-columns: 1fr; }
+      .pricing-card:last-child { grid-column: span 1; max-width: 100%; }
+      .hero-actions { flex-direction: column; }
+      .btn-primary, .btn-secondary { width: 100%; justify-content: center; }
+      .cta-box { padding: 40px 24px; }
+      .footer-inner { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Navigation ──────────────────────────────────────────────── -->
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="#" class="nav-brand">
+        <span class="logo-icon">🚄</span>
+        <span>HandoffRail</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="#how-it-works">How It Works</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#code">Code</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener">GitHub</a></li>
+      </ul>
+      <a href="#get-started" class="nav-cta">Get Started →</a>
+      <button class="nav-hamburger" aria-label="Menu" onclick="document.querySelector('.nav-mobile').classList.toggle('open')">☰</button>
+    </div>
+  </nav>
+  <div class="nav-mobile">
+    <a href="#how-it-works">How It Works</a>
+    <a href="#features">Features</a>
+    <a href="#code">Code</a>
+    <a href="#pricing">Pricing</a>
+    <a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener">GitHub</a>
+    <a href="#get-started" class="nav-cta" style="text-align:center;">Get Started</a>
+  </div>
+
+  <!-- ── Hero ─────────────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="container hero-content">
+      <div class="hero-badge">
+        <span class="dot"></span>
+        Open Source &middot; v0.1 &middot; 379 Tests Passing
+      </div>
+      <h1>Zero Context Loss<br>Between <span class="gradient-text">AI Agents</span></h1>
+      <p class="hero-subtitle">
+        When Agent A hands off to Agent B, the full context — decisions, actions, conversation state — survives the transition intact. No repetition, no dropped threads.
+      </p>
+      <div class="hero-actions">
+        <a href="#quickstart" class="btn-primary">⚡ Get Started</a>
+        <a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener" class="btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.605-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12"/></svg>
+          View on GitHub
+        </a>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <div class="hero-stat-value gradient-text">379</div>
+          <div class="hero-stat-label">Tests Passing</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-value gradient-text">19</div>
+          <div class="hero-stat-label">API Endpoints</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-value gradient-text">3</div>
+          <div class="hero-stat-label">Framework Adapters</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-value gradient-text">&lt;5min</div>
+          <div class="hero-stat-label">Quick Start</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── How It Works ─────────────────────────────────────────────── -->
+  <section id="how-it-works" class="section" style="background: var(--bg-secondary);">
+    <div class="container" style="text-align: center;">
+      <div class="section-label">How It Works</div>
+      <h2 class="section-title">Three steps. Zero context loss.</h2>
+      <p class="section-desc" style="margin: 0 auto;">
+        HandoffRail sits between your agents as structured middleware. Create a packet, claim it, chain it — context flows forward, never backward.
+      </p>
+      <div class="how-grid">
+        <div class="how-card">
+          <div class="how-step">1</div>
+          <h3>Create</h3>
+          <p>Agent A finishes its work and creates a structured handoff packet — packing decisions, conversation state, pending actions, and dependencies into one validated payload.</p>
+        </div>
+        <div class="how-card">
+          <div class="how-step">2</div>
+          <h3>Claim</h3>
+          <p>Agent B (or a human) claims the packet, instantly receiving the full context. No repetition, no "what were we talking about?" — everything is there.</p>
+        </div>
+        <div class="how-card">
+          <div class="how-step">3</div>
+          <h3>Chain</h3>
+          <p>Need more agents? Chain handoffs create linked packets that carry context forward across any number of agents — with full audit trails at every step.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Features ─────────────────────────────────────────────────── -->
+  <section id="features" class="section">
+    <div class="container">
+      <div class="section-label">Features</div>
+      <h2 class="section-title">Everything you need for<br><span class="gradient-text">seamless handoffs</span></h2>
+      <p class="section-desc">
+        Built for production multi-agent systems. Structured packets, human checkpoints, framework adapters, and first-class observability.
+      </p>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">📦</div>
+          <h3>Structured Handoff Packets</h3>
+          <p>Validated JSON schema with decisions, conversation state, actions, dependencies, and artifacts. Versioned for forward compatibility.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🧑‍⚖️</div>
+          <h3>Human-in-the-Loop</h3>
+          <p>Built-in HITL checkpoints with approval workflows, configurable timeouts, and escalation. Critical decisions get human eyes.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔗</div>
+          <h3>Chain Handoffs</h3>
+          <p>Link packets into multi-agent workflows. Each chain preserves parent context with full audit trail across the entire sequence.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🪝</div>
+          <h3>Webhooks + HMAC</h3>
+          <p>Event-driven notifications with HMAC-SHA256 signed payloads. Subscribe to packet lifecycle events and build reactive systems.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🐍</div>
+          <h3>Python SDK</h3>
+          <p>Sync + async clients, fluent builder pattern, LangChain & CrewAI adapters, and a base class for custom framework integrations.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">⌨️</div>
+          <h3>CLI</h3>
+          <p>7 commands for packet operations. Create, claim, respond to HITL, view history — all from your terminal. <code>handoffrail serve</code> for local dev.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🐳</div>
+          <h3>Docker + PostgreSQL</h3>
+          <p>One-command local dev with Docker Compose. Production setup with PostgreSQL 16, Redis 7, and health monitoring endpoints.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔒</div>
+          <h3>Auth + Rate Limiting</h3>
+          <p>API key auth with tier-based rate limiting. Free, Pro, and Business tiers with enforced quotas for agents, keys, and packet size.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3>Observability</h3>
+          <p>Prometheus metrics, structured logging with structlog, health/readiness probes, and full event history for every packet.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Code Examples ────────────────────────────────────────────── -->
+  <section id="code" class="section" style="background: var(--bg-secondary);">
+    <div class="container">
+      <div class="section-label">Code</div>
+      <h2 class="section-title">Ship in minutes,<br><span class="gradient-text">not days</span></h2>
+      <p class="section-desc">
+        From zero to your first handoff in under 5 minutes. SDK, REST, or CLI — pick your weapon.
+      </p>
+      <div class="code-tabs">
+        <div class="code-tab-list">
+          <button class="code-tab active" onclick="switchTab(event, 'tab-sdk')">Python SDK</button>
+          <button class="code-tab" onclick="switchTab(event, 'tab-rest')">REST API</button>
+          <button class="code-tab" onclick="switchTab(event, 'tab-cli')">CLI</button>
+          <button class="code-tab" onclick="switchTab(event, 'tab-builder')">Builder Pattern</button>
+          <button class="code-tab" onclick="switchTab(event, 'tab-langchain')">LangChain</button>
+        </div>
+
+        <div id="tab-sdk" class="code-panel active">
+          <div class="code-block"><pre><span class="kw">from</span> handoffrail.sdk <span class="kw">import</span> HandoffRailClient
+
+<span class="cm"># Connect to HandoffRail</span>
+client = HandoffRailClient(
+    base_url=<span class="str">"http://localhost:8080/api/v1"</span>,
+    api_key=<span class="str">"hr_your_key_here"</span>
+)
+
+<span class="cm"># Create a handoff packet</span>
+packet = client.create_packet(
+    source_agent={<span class="str">"id"</span>: <span class="str">"sales-01"</span>, <span class="str">"name"</span>: <span class="str">"SalesBot"</span>, <span class="str">"framework"</span>: <span class="str">"langchain"</span>},
+    target_agent={<span class="str">"id"</span>: <span class="str">"billing-01"</span>, <span class="str">"name"</span>: <span class="str">"BillingBot"</span>},
+    summary=<span class="str">"Customer wants to upgrade to Business tier"</span>,
+    priority=<span class="str">"high"</span>,
+    tags=[<span class="str">"upgrade"</span>, <span class="str">"business-tier"</span>]
+)
+
+<span class="cm"># Agent B claims the packet</span>
+claimed = client.claim_packet(
+    packet.id,
+    agent_id=<span class="str">"billing-01"</span>,
+    agent_name=<span class="str">"BillingBot"</span>
+)
+
+<span class="cm"># Mark as complete</span>
+client.complete_packet(packet.id)</pre></div>
+        </div>
+
+        <div id="tab-rest" class="code-panel">
+          <div class="code-block"><pre><span class="cm"># Create a handoff packet</span>
+curl -X POST http://localhost:8080/api/v1/packets \
+  -H <span class="str">"X-API-Key: hr_your_key"</span> \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "metadata": {
+      "source_agent": {"id": "sales-01", "name": "SalesBot", "framework": "langchain"},
+      "target_agent": {"id": "billing-01", "name": "BillingBot"},
+      "priority": "high"
+    },
+    "context": {
+      "summary": "Customer wants to upgrade",
+      "conversation_state": [
+        {"role": "user", "content": "I want to upgrade"},
+        {"role": "agent", "content": "Let me hand you to billing."}
+      ]
+    },
+    "decisions": [],
+    "actions": {
+      "pending": [{"id": "a1", "description": "Process upgrade", "assignee": "billing-01"}],
+      "completed": [],
+      "failed": []
+    }
+  }'</span>
+
+<span class="cm"># Claim it</span>
+curl -X POST http://localhost:8080/api/v1/packets/{id}/claim \
+  -H <span class="str">"X-API-Key: hr_your_key"</span> \
+  -d <span class="str">'{"agent_id": "billing-01", "agent_name": "BillingBot"}'</span></pre></div>
+        </div>
+
+        <div id="tab-cli" class="code-panel">
+          <div class="code-block"><pre><span class="cm"># Start the server</span>
+handoffrail serve --port 8080
+
+<span class="cm"># Create a packet</span>
+handoffrail create \
+  --source-id sales-01 \
+  --source-name SalesBot \
+  --target-id billing-01 \
+  --summary <span class="str">"Customer upgrade request"</span> \
+  --priority high
+
+<span class="cm"># List pending packets</span>
+handoffrail list --status created --priority high
+
+<span class="cm"># Claim a packet</span>
+handoffrail claim abc-123 --agent-id billing-01 --agent-name BillingBot
+
+<span class="cm"># Respond to HITL checkpoint</span>
+handoffrail respond abc-123 --response <span class="str">"Approved"</span> --responded-by manager@company.com
+
+<span class="cm"># View audit trail</span>
+handoffrail history abc-123</pre></div>
+        </div>
+
+        <div id="tab-builder" class="code-panel">
+          <div class="code-block"><pre><span class="kw">from</span> handoffrail.sdk <span class="kw">import</span> HandoffPacket
+
+<span class="cm"># Fluent builder for complex handoffs</span>
+packet = (
+    HandoffPacket.builder()
+    .from_agent(<span class="str">"sales-01"</span>, <span class="str">"SalesBot"</span>, framework=<span class="str">"langchain"</span>)
+    .to_agent(<span class="str">"billing-01"</span>, <span class="str">"BillingBot"</span>)
+    .with_summary(<span class="str">"Customer wants Business tier upgrade"</span>)
+    .with_conversation(messages=[
+        {<span class="str">"role"</span>: <span class="str">"user"</span>, <span class="str">"content"</span>: <span class="str">"I want to upgrade"</span>},
+        {<span class="str">"role"</span>: <span class="str">"agent"</span>, <span class="str">"content"</span>: <span class="str">"Let me connect you to billing"</span>},
+    ])
+    .with_decision(<span class="str">"Proceed with upgrade"</span>, rationale=<span class="str">"Customer eligible"</span>)
+    .with_action(<span class="str">"Process payment"</span>, assignee=<span class="str">"billing-01"</span>, priority=<span class="str">"high"</span>)
+    .with_dependency(<span class="str">"stripe-api"</span>, type=<span class="str">"api"</span>, description=<span class="str">"Payment gateway"</span>)
+    .with_hitl(reason=<span class="str">"High-value upgrade"</span>, question=<span class="str">"Approve upgrade?"</span>)
+    .with_priority(<span class="str">"high"</span>)
+    .with_tags([<span class="str">"upgrade"</span>, <span class="str">"business-tier"</span>])
+    .build()
+)</pre></div>
+        </div>
+
+        <div id="tab-langchain" class="code-panel">
+          <div class="code-block"><pre><span class="kw">from</span> handoffrail.sdk <span class="kw">import</span> HandoffRailClient
+<span class="kw">from</span> handoffrail.integrations.langchain <span class="kw">import</span> LangChainAdapter, HandoffRailTool
+
+client = HandoffRailClient(base_url=<span class="str">"http://localhost:8080/api/v1"</span>, api_key=<span class="str">"hr_..."</span>)
+adapter = LangChainAdapter(client=client, agent_id=<span class="str">"sales-01"</span>, agent_name=<span class="str">"SalesBot"</span>)
+
+<span class="cm"># Create handoff from LangChain conversation</span>
+packet = adapter.create_handoff(
+    target_agent_id=<span class="str">"billing-01"</span>,
+    target_agent_name=<span class="str">"BillingBot"</span>,
+    summary=<span class="str">"Customer upgrade request"</span>,
+    conversation_state=adapter.extract_conversation(chat_history),
+)
+
+<span class="cm"># Receive: poll for unclaimed packets</span>
+packets = adapter.poll_for_handoff()
+claimed = adapter.claim_handoff(packets[<span class="num">0</span>].id)
+
+<span class="cm"># Resume conversation from handoff</span>
+messages = adapter.resume_conversation(claimed)
+
+<span class="cm"># Use as LangChain Tool</span>
+tool = HandoffRailTool(client=client)</pre></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Quick Start ──────────────────────────────────────────────── -->
+  <section id="quickstart" class="section">
+    <div class="container">
+      <div class="section-label">Quick Start</div>
+      <h2 class="section-title">Up and running in<br><span class="gradient-text">under 5 minutes</span></h2>
+      <p class="section-desc">
+        Clone, install, create your first handoff. That's it.
+      </p>
+      <div class="quickstart-steps">
+        <div class="quickstart-step">
+          <div class="quickstart-num">1</div>
+          <div class="quickstart-content">
+            <h4>Clone & Install</h4>
+            <p>Get the code and install the server with dev dependencies.</p>
+            <div class="quickstart-code">git clone https://github.com/MelaBuilt-AI/handoffrail.git
+cd handoffrail/server && pip install -e ".[dev]"</div>
+          </div>
+        </div>
+        <div class="quickstart-step">
+          <div class="quickstart-num">2</div>
+          <div class="quickstart-content">
+            <h4>Start the API</h4>
+            <p>Fire up the FastAPI server with auto-reload for development.</p>
+            <div class="quickstart-code">uvicorn app.main:app --reload --port 8080</div>
+          </div>
+        </div>
+        <div class="quickstart-step">
+          <div class="quickstart-num">3</div>
+          <div class="quickstart-content">
+            <h4>Create Your First Handoff</h4>
+            <p>Use the SDK, REST, or CLI — your first handoff packet in seconds.</p>
+            <div class="quickstart-code">from handoffrail.sdk import HandoffRailClient
+
+client = HandoffRailClient(base_url="http://localhost:8080/api/v1", api_key="hr_...")
+packet = client.create_packet(
+    source_agent={"id": "agent-a", "name": "Agent A"},
+    target_agent={"id": "agent-b", "name": "Agent B"},
+    summary="First handoff!",
+)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Pricing ──────────────────────────────────────────────────── -->
+  <section id="pricing" class="section" style="background: var(--bg-secondary);">
+    <div class="container" style="text-align: center;">
+      <div class="section-label">Pricing</div>
+      <h2 class="section-title">Start free. Scale when<br><span class="gradient-text">you're ready.</span></h2>
+      <p class="section-desc" style="margin: 0 auto;">
+        Open source, self-hosted forever. Cloud tiers for teams that need more.
+      </p>
+      <div class="pricing-grid">
+        <!-- Free -->
+        <div class="pricing-card">
+          <div class="pricing-tier">Free</div>
+          <div class="pricing-price">$0</div>
+          <div class="pricing-period">forever</div>
+          <div class="pricing-desc">Perfect for trying HandoffRail and small projects.</div>
+          <ul class="pricing-features">
+            <li><span class="check">✓</span> 5 handoffs / day</li>
+            <li><span class="check">✓</span> 2 agents</li>
+            <li><span class="check">✓</span> 1 API key</li>
+            <li><span class="check">✓</span> 64 KB packet size</li>
+            <li><span class="check">✓</span> HITL checkpoints</li>
+            <li><span class="cross">✗</span> Webhooks</li>
+            <li><span class="cross">✗</span> Audit trail</li>
+          </ul>
+          <a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener" class="pricing-cta outline">Self-Host Free</a>
+        </div>
+        <!-- Pro -->
+        <div class="pricing-card featured">
+          <div class="pricing-tier">Pro</div>
+          <div class="pricing-price">$29</div>
+          <div class="pricing-period">/ month</div>
+          <div class="pricing-desc">For teams running production multi-agent workflows.</div>
+          <ul class="pricing-features">
+            <li><span class="check">✓</span> Unlimited handoffs</li>
+            <li><span class="check">✓</span> 10 agents</li>
+            <li><span class="check">✓</span> 5 API keys</li>
+            <li><span class="check">✓</span> 256 KB packet size</li>
+            <li><span class="check">✓</span> HITL checkpoints</li>
+            <li><span class="check">✓</span> 5 webhooks</li>
+            <li><span class="check">✓</span> 30-day audit trail</li>
+            <li><span class="check">✓</span> 1,000 req / hr</li>
+          </ul>
+          <a href="#get-started" class="pricing-cta primary">Start Pro Trial</a>
+        </div>
+        <!-- Business -->
+        <div class="pricing-card">
+          <div class="pricing-tier">Business</div>
+          <div class="pricing-price">$99</div>
+          <div class="pricing-period">/ month</div>
+          <div class="pricing-desc">For orgs with serious multi-agent infrastructure.</div>
+          <ul class="pricing-features">
+            <li><span class="check">✓</span> Unlimited handoffs</li>
+            <li><span class="check">✓</span> 50 agents</li>
+            <li><span class="check">✓</span> 25 API keys</li>
+            <li><span class="check">✓</span> 1 MB packet size</li>
+            <li><span class="check">✓</span> HITL checkpoints</li>
+            <li><span class="check">✓</span> Unlimited webhooks</li>
+            <li><span class="check">✓</span> Full audit + export</li>
+            <li><span class="check">✓</span> 10,000 req / hr</li>
+            <li><span class="check">✓</span> Priority Slack support</li>
+          </ul>
+          <a href="#get-started" class="pricing-cta outline">Contact Sales</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── CTA ──────────────────────────────────────────────────────── -->
+  <section id="get-started" class="cta-section">
+    <div class="container">
+      <div class="cta-box">
+        <h2>Ready to eliminate context loss?</h2>
+        <p>Get started in under 5 minutes. Open source, self-hosted, production-ready.</p>
+        <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+          <a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener" class="btn-primary">⚡ Get Started on GitHub</a>
+          <a href="docs/quickstart.html" class="btn-secondary">📖 Read the Docs</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ───────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <span>🚄</span>
+        <span>HandoffRail</span>
+      </div>
+      <ul class="footer-links">
+        <li><a href="docs/quickstart.html">Docs</a></li>
+        <li><a href="https://github.com/MelaBuilt-AI/handoffrail" target="_blank" rel="noopener">GitHub</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="https://github.com/MelaBuilt-AI/handoffrail/issues" target="_blank" rel="noopener">Issues</a></li>
+      </ul>
+      <div class="footer-copy">&copy; 2026 MelaBuilt AI. MIT License.</div>
+    </div>
+  </footer>
+
+  <!-- ── Scripts ──────────────────────────────────────────────────── -->
+  <script>
+    function switchTab(event, tabId) {
+      // Deactivate all tabs and panels
+      document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.code-panel').forEach(p => p.classList.remove('active'));
+      // Activate clicked tab and corresponding panel
+      event.currentTarget.classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
+
+    // Smooth scroll offset for fixed nav
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', function(e) {
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          e.preventDefault();
+          const offset = 80;
+          window.scrollTo({ top: target.offsetTop - offset, behavior: 'smooth' });
+          // Close mobile menu if open
+          document.querySelector('.nav-mobile').classList.remove('open');
+        }
+      });
+    });
+  </script>
+</body>
+</html>

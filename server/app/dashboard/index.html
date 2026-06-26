@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HandoffRail Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <span class="logo">⚡</span> HandoffRail
+        </div>
+        <div class="nav-links">
+            <a href="#" class="nav-link active" data-view="packets">Packets</a>
+            <a href="#" class="nav-link" data-view="hitl">HITL Queue</a>
+            <a href="#" class="nav-link" data-view="live">Live Feed</a>
+            <a href="#" class="nav-link" data-view="stats">Stats</a>
+        </div>
+        <div class="nav-status">
+            <span id="ws-status" class="status-dot disconnected"></span>
+            <span id="ws-label">Disconnected</span>
+        </div>
+    </nav>
+
+    <main class="container">
+        <!-- Packets List View -->
+        <section id="view-packets" class="view active">
+            <div class="view-header">
+                <h2>Packets</h2>
+                <div class="filters">
+                    <select id="filter-status">
+                        <option value="">All Statuses</option>
+                        <option value="created">Created</option>
+                        <option value="claimed">Claimed</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="awaiting_human">Awaiting Human</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                        <option value="expired">Expired</option>
+                    </select>
+                    <input id="filter-search" type="text" placeholder="Search by ID or agent..." />
+                    <button id="btn-refresh" class="btn btn-primary">Refresh</button>
+                </div>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Status</th>
+                        <th>Source → Target</th>
+                        <th>Priority</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="packets-tbody">
+                    <tr><td colspan="6" class="empty-state">No packets found</td></tr>
+                </tbody>
+            </table>
+            <div class="pagination" id="packets-pagination"></div>
+        </section>
+
+        <!-- Packet Detail View -->
+        <section id="view-detail" class="view">
+            <div class="view-header">
+                <button id="btn-back" class="btn btn-secondary">← Back</button>
+                <h2 id="detail-title">Packet Detail</h2>
+            </div>
+            <div class="detail-grid">
+                <div class="detail-card">
+                    <h3>Metadata</h3>
+                    <div id="detail-meta" class="detail-content"></div>
+                </div>
+                <div class="detail-card">
+                    <h3>Context</h3>
+                    <div id="detail-context" class="detail-content"></div>
+                </div>
+                <div class="detail-card">
+                    <h3>Decisions</h3>
+                    <div id="detail-decisions" class="detail-content"></div>
+                </div>
+                <div class="detail-card">
+                    <h3>Actions</h3>
+                    <div id="detail-actions" class="detail-content"></div>
+                </div>
+                <div class="detail-card full-width">
+                    <h3>Event History</h3>
+                    <div id="detail-history" class="timeline"></div>
+                </div>
+                <div class="detail-card full-width">
+                    <h3>Raw JSON</h3>
+                    <pre id="detail-json" class="json-viewer"></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- HITL Queue View -->
+        <section id="view-hitl" class="view">
+            <div class="view-header">
+                <h2>HITL Queue</h2>
+                <p class="subtitle">Packets awaiting human review</p>
+            </div>
+            <div id="hitl-list" class="hitl-cards">
+                <div class="empty-state">No packets awaiting human review</div>
+            </div>
+        </section>
+
+        <!-- Live Feed View -->
+        <section id="view-live" class="view">
+            <div class="view-header">
+                <h2>Live Feed</h2>
+                <button id="btn-clear-feed" class="btn btn-secondary">Clear</button>
+            </div>
+            <div id="live-feed" class="feed-container">
+                <div class="feed-empty">Waiting for events...</div>
+            </div>
+        </section>
+
+        <!-- Stats View -->
+        <section id="view-stats" class="view">
+            <div class="view-header">
+                <h2>Statistics</h2>
+            </div>
+            <div class="stats-grid" id="stats-container">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total">—</div>
+                    <div class="stat-label">Total Packets</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-24h">—</div>
+                    <div class="stat-label">Last 24h</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-hitl">—</div>
+                    <div class="stat-label">HITL Queue</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-ws">—</div>
+                    <div class="stat-label">WS Connections</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-claim-time">—</div>
+                    <div class="stat-label">Avg Claim Time</div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <h3>Packets by Status</h3>
+                <div id="status-bars" class="status-bars"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- HITL Response Modal -->
+    <div id="hitl-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <h3>Respond to HITL Checkpoint</h3>
+            <p id="hitl-modal-question"></p>
+            <div id="hitl-modal-options" class="modal-options"></div>
+            <div class="modal-input">
+                <input id="hitl-modal-response" type="text" placeholder="Or type a custom response..." />
+                <input id="hitl-modal-responded-by" type="text" placeholder="Your name" />
+            </div>
+            <div class="modal-actions">
+                <button id="hitl-modal-submit" class="btn btn-primary">Submit Response</button>
+                <button id="hitl-modal-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

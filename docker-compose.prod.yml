@@ -1,0 +1,68 @@
+# HandoffRail — Production Docker Compose
+# Usage: docker compose -f docker-compose.prod.yml up -d
+#
+# Requires environment variables (set in .env or shell):
+#   HR_DATABASE_URL  — PostgreSQL connection string
+#   HR_REDIS_URL     — Redis connection string (optional, for future Celery use)
+#   HR_ENVIRONMENT   — Set to "prod"
+#   HR_LOG_LEVEL     — e.g. "info" or "warning"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${HR_PORT:-8080}:8080"
+    environment:
+      - HR_DATABASE_URL=${HR_DATABASE_URL:-postgresql+asyncpg://handoffrail:handoffrail@db:5432/handoffrail}
+      - HR_REDIS_URL=${HR_REDIS_URL:-redis://redis:6379/0}
+      - HR_ENVIRONMENT=${HR_ENVIRONMENT:-prod}
+      - HR_LOG_LEVEL=${HR_LOG_LEVEL:-info}
+      - HR_CORS_ORIGINS=${HR_CORS_ORIGINS:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-handoffrail}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-handoffrail}
+      - POSTGRES_DB=${POSTGRES_DB:-handoffrail}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U handoffrail"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  redis-data:

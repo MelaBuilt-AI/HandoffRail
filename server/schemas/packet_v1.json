@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://handoffrail.dev/schemas/packet/v1",
+  "title": "HandoffPacket",
+  "type": "object",
+  "required": ["id", "version", "metadata", "context", "decisions", "actions", "dependencies"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique packet identifier"
+    },
+    "version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Schema version for forward compatibility"
+    },
+    "parent_packet_id": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "ID of the packet this continues from (for chain handoffs)"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["source_agent", "target_agent", "created_at", "priority"],
+      "properties": {
+        "source_agent": {
+          "type": "object",
+          "required": ["id", "name", "framework"],
+          "properties": {
+            "id": { "type": "string", "description": "Unique agent identifier" },
+            "name": { "type": "string", "description": "Human-readable agent name" },
+            "framework": { "type": "string", "description": "Agent framework (langchain, crewai, autogen, custom)" },
+            "version": { "type": "string", "description": "Agent version (optional)" }
+          }
+        },
+        "target_agent": {
+          "type": "object",
+          "required": ["id", "name"],
+          "properties": {
+            "id": { "type": "string", "description": "Target agent or 'human' for HITL" },
+            "name": { "type": "string", "description": "Target name or role" },
+            "framework": { "type": "string", "description": "Target framework (optional)" }
+          }
+        },
+        "created_at": { "type": "string", "format": "date-time" },
+        "claimed_at": { "type": ["string", "null"], "format": "date-time" },
+        "completed_at": { "type": ["string", "null"], "format": "date-time" },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "normal", "high", "critical"],
+          "default": "normal"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Freeform tags for filtering"
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "required": ["summary", "conversation_state"],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Concise natural-language summary of work so far"
+        },
+        "conversation_state": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["role", "content"],
+            "properties": {
+              "role": { "type": "string", "enum": ["user", "agent", "system", "human"] },
+              "content": { "type": "string" },
+              "timestamp": { "type": ["string", "null"], "format": "date-time" },
+              "metadata": { "type": ["object", "null"] }
+            }
+          },
+          "description": "Key conversation turns (not necessarily full transcript)"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "value"],
+            "properties": {
+              "key": { "type": "string", "description": "Artifact name (e.g. 'draft_email')" },
+              "value": { "type": ["string", "object", "array"], "description": "Artifact content" },
+              "content_type": { "type": "string", "description": "MIME type hint (optional)" }
+            }
+          },
+          "description": "Named artifacts produced during the session"
+        },
+        "custom": {
+          "type": "object",
+          "description": "Framework-specific or user-defined context fields",
+          "additionalProperties": true
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "decision", "rationale"],
+        "properties": {
+          "id": { "type": "string", "description": "Decision identifier" },
+          "decision": { "type": "string", "description": "What was decided" },
+          "rationale": { "type": "string", "description": "Why this decision was made" },
+          "alternatives": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Options that were considered but not chosen"
+          },
+          "decided_by": { "type": "string", "description": "Agent or human who decided" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "description": "Decisions made during this session"
+    },
+    "actions": {
+      "type": "object",
+      "required": ["pending"],
+      "properties": {
+        "pending": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "description", "assignee"],
+            "properties": {
+              "id": { "type": "string" },
+              "description": { "type": "string", "description": "What needs to be done" },
+              "assignee": { "type": "string", "description": "Agent/human ID who should handle this" },
+              "priority": { "type": "string", "enum": ["low", "normal", "high", "critical"] },
+              "depends_on": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "IDs of actions this depends on"
+              },
+              "deadline": { "type": ["string", "null"], "format": "date-time" }
+            }
+          }
+        },
+        "completed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "description", "result"],
+            "properties": {
+              "id": { "type": "string" },
+              "description": { "type": "string" },
+              "result": { "type": "string", "description": "Outcome or output" },
+              "completed_by": { "type": "string" },
+              "completed_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "failed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "description", "error"],
+            "properties": {
+              "id": { "type": "string" },
+              "description": { "type": "string" },
+              "error": { "type": "string" },
+              "retries_remaining": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "description"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["data", "api", "human_approval", "external_event", "resource"],
+            "description": "Kind of dependency"
+          },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["blocked", "available", "unknown"], "default": "unknown" },
+          "source": { "type": "string", "description": "Where this dependency comes from (URL, service name, etc.)" }
+        }
+      },
+      "description": "External dependencies the receiving agent should know about"
+    },
+    "hitl": {
+      "type": ["object", "null"],
+      "description": "Human-in-the-loop checkpoint (null if no HITL needed)",
+      "properties": {
+        "required": { "type": "boolean", "default": false },
+        "reason": { "type": "string", "description": "Why human review is needed" },
+        "question": { "type": "string", "description": "Question or decision point for the human" },
+        "options": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Predefined choices (optional, null = free-form)"
+        },
+        "response": { "type": ["string", "null"], "description": "Human's response (null until answered)" },
+        "responded_at": { "type": ["string", "null"], "format": "date-time" },
+        "responded_by": { "type": ["string", "null"], "description": "Human identifier" },
+        "timeout_seconds": { "type": ["integer", "null"], "description": "Auto-escalation timeout" }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["created", "claimed", "in_progress", "awaiting_human", "completed", "failed", "expired"],
+      "default": "created",
+      "description": "Packet lifecycle status"
+    }
+  }
+}
