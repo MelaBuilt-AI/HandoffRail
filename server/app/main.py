@@ -68,6 +68,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await pubsub.disconnect()
     reset_connection_manager()
 
+    # Shutdown OpenTelemetry
+    from app.services.tracing import shutdown_otel
+    shutdown_otel()
+
     logger.info("handoffrail_stopping", message="Shutting down")
 
 

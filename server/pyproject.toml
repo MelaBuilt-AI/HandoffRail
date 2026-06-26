@@ -36,6 +36,11 @@ prod = [
     "celery[redis]>=5.3,<6.0",
     "redis[hiredis]>=5.0,<6.0",
 ]
+otel = [
+    "opentelemetry-api>=1.24,<2.0",
+    "opentelemetry-sdk>=1.24,<2.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.24,<2.0",
+]
 
 [tool.ruff]
 target-version = "py311"

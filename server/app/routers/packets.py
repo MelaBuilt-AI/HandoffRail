@@ -27,6 +27,7 @@ from app.models.packet import (
 )
 from app.services.state_machine import InvalidTransitionError, validate_transition
 from app.routers.websocket import publish_event
+from app.services.tracing import trace_packet_operation
 
 logger = structlog.get_logger()
 
@@ -263,66 +264,73 @@ async def create_packet(
     packet_id = str(uuid4())
     now = datetime.now(timezone.utc)
 
-    # Determine initial status
-    initial_status = "created"
-    if payload.hitl is not None and payload.hitl.required:
-        initial_status = "awaiting_human"
+    with trace_packet_operation("create_packet", packet_id=packet_id, tenant_id=api_key.tenant_id) as span:
+        span.set_attribute("packet.source_agent", payload.metadata.source_agent.id)
+        span.set_attribute("packet.target_agent", payload.metadata.target_agent.id)
+        span.set_attribute("packet.priority", payload.metadata.priority.value)
 
-    # Build metadata dict
-    metadata_dict = payload.metadata.model_dump(mode="json")
-    if metadata_dict.get("created_at") is None:
-        metadata_dict["created_at"] = now.isoformat()
+        # Determine initial status
+        initial_status = "created"
+        if payload.hitl is not None and payload.hitl.required:
+            initial_status = "awaiting_human"
 
-    # Build context dict
-    context_dict = payload.context.model_dump(mode="json")
+        span.set_attribute("packet.initial_status", initial_status)
 
-    # Build decisions, actions, dependencies dicts
-    decisions_list = [d.model_dump(mode="json") for d in payload.decisions]
-    actions_dict = payload.actions.model_dump(mode="json")
-    dependencies_list = [d.model_dump(mode="json") for d in payload.dependencies]
-    hitl_dict = payload.hitl.model_dump(mode="json") if payload.hitl else None
+        # Build metadata dict
+        metadata_dict = payload.metadata.model_dump(mode="json")
+        if metadata_dict.get("created_at") is None:
+            metadata_dict["created_at"] = now.isoformat()
 
-    db_packet = Packet(
-        id=packet_id,
-        version="1.0.0",
-        parent_packet_id=str(payload.parent_packet_id) if payload.parent_packet_id else None,
-        status=initial_status,
-        tenant_id=api_key.tenant_id,
-        metadata_json=json.dumps(metadata_dict, default=str),
-        context_json=json.dumps(context_dict, default=str),
-        decisions_json=json.dumps(decisions_list, default=str),
-        actions_json=json.dumps(actions_dict, default=str),
-        dependencies_json=json.dumps(dependencies_list, default=str),
-        hitl_json=json.dumps(hitl_dict, default=str) if hitl_dict else None,
-        created_at=now,
-        updated_at=now,
-    )
+        # Build context dict
+        context_dict = payload.context.model_dump(mode="json")
 
-    db.add(db_packet)
-    await _add_event(db, packet_id, "created", f"agent:{payload.metadata.source_agent.id}")
-    await db.commit()
-    await db.refresh(db_packet)
+        # Build decisions, actions, dependencies dicts
+        decisions_list = [d.model_dump(mode="json") for d in payload.decisions]
+        actions_dict = payload.actions.model_dump(mode="json")
+        dependencies_list = [d.model_dump(mode="json") for d in payload.dependencies]
+        hitl_dict = payload.hitl.model_dump(mode="json") if payload.hitl else None
 
-    logger.info(
-        "packet_created",
-        packet_id=packet_id,
-        status=initial_status,
-        source=payload.metadata.source_agent.id,
-        target=payload.metadata.target_agent.id,
-    )
+        db_packet = Packet(
+            id=packet_id,
+            version="1.0.0",
+            parent_packet_id=str(payload.parent_packet_id) if payload.parent_packet_id else None,
+            status=initial_status,
+            tenant_id=api_key.tenant_id,
+            metadata_json=json.dumps(metadata_dict, default=str),
+            context_json=json.dumps(context_dict, default=str),
+            decisions_json=json.dumps(decisions_list, default=str),
+            actions_json=json.dumps(actions_dict, default=str),
+            dependencies_json=json.dumps(dependencies_list, default=str),
+            hitl_json=json.dumps(hitl_dict, default=str) if hitl_dict else None,
+            created_at=now,
+            updated_at=now,
+        )
 
-    # Broadcast event to WebSocket subscribers
-    await publish_event(
-        event_type="packet.created",
-        data={
-            "status": initial_status,
-            "metadata": metadata_dict,
-        },
-        packet_id=packet_id,
-        tenant_id=api_key.tenant_id,
-    )
+        db.add(db_packet)
+        await _add_event(db, packet_id, "created", f"agent:{payload.metadata.source_agent.id}")
+        await db.commit()
+        await db.refresh(db_packet)
 
-    return _packet_to_response(db_packet)
+        logger.info(
+            "packet_created",
+            packet_id=packet_id,
+            status=initial_status,
+            source=payload.metadata.source_agent.id,
+            target=payload.metadata.target_agent.id,
+        )
+
+        # Broadcast event to WebSocket subscribers
+        await publish_event(
+            event_type="packet.created",
+            data={
+                "status": initial_status,
+                "metadata": metadata_dict,
+            },
+            packet_id=packet_id,
+            tenant_id=api_key.tenant_id,
+        )
+
+        return _packet_to_response(db_packet)
 
 
 # ── Read ────────────────────────────────────────────────────────────────────────
@@ -418,7 +426,11 @@ async def claim_packet(
         {"agent_name": payload.agent_name, "framework": payload.framework},
     )
 
-    await db.commit()
+    with trace_packet_operation("claim_packet", packet_id=str(packet_id), tenant_id=api_key.tenant_id) as span:
+        span.set_attribute("claim.agent_id", payload.agent_id)
+        span.set_attribute("packet.transition", transition)
+        await db.commit()
+
     await db.refresh(packet)
 
     logger.info("packet_claimed", packet_id=str(packet_id), agent=payload.agent_id)
@@ -526,7 +538,11 @@ async def update_packet(
 
     packet.updated_at = now
 
-    await db.commit()
+    with trace_packet_operation("update_packet", packet_id=str(packet_id), tenant_id=api_key.tenant_id) as span:
+        if payload.status is not None:
+            span.set_attribute("packet.new_status", payload.status.value)
+        await db.commit()
+
     await db.refresh(packet)
 
     logger.info("packet_updated", packet_id=str(packet_id), status=payload.status)
@@ -592,7 +608,9 @@ async def delete_packet(
         {"previous_status": previous_status, "reason": "soft_delete"},
     )
 
-    await db.commit()
+    with trace_packet_operation("delete_packet", packet_id=str(packet_id), tenant_id=api_key.tenant_id) as span:
+        span.set_attribute("packet.previous_status", previous_status)
+        await db.commit()
 
     logger.info("packet_soft_deleted", packet_id=str(packet_id), previous_status=previous_status)
 
@@ -680,7 +698,11 @@ async def respond_to_hitl(
         },
     )
 
-    await db.commit()
+    with trace_packet_operation("hitl_respond", packet_id=str(packet_id), tenant_id=api_key.tenant_id) as span:
+        span.set_attribute("hitl.responded_by", payload.responded_by)
+        span.set_attribute("packet.new_status", "claimed")
+        await db.commit()
+
     await db.refresh(packet)
 
     logger.info("hitl_responded", packet_id=str(packet_id), responded_by=payload.responded_by)
@@ -835,7 +857,11 @@ async def chain_packet(
         {"child_packet_id": new_id},
     )
 
-    await db.commit()
+    with trace_packet_operation("chain_packet", packet_id=new_id, tenant_id=api_key.tenant_id) as span:
+        span.set_attribute("packet.parent_packet_id", str(packet_id))
+        span.set_attribute("packet.initial_status", initial_status)
+        await db.commit()
+
     await db.refresh(db_packet)
 
     logger.info(
