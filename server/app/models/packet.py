@@ -311,13 +311,19 @@ class WebhookCreate(BaseModel):
         default_factory=lambda: ["packet.created", "packet.claimed", "packet.completed", "packet.failed"],
         description="Event types to subscribe to",
     )
-    secret: str = Field(..., min_length=16, description="Secret for HMAC-SHA256 signing")
+    secret: str = Field(..., min_length=16, max_length=256, description="Secret for HMAC-SHA256 signing")
 
     @field_validator("url")
     @classmethod
     def validate_url(cls, v: str) -> str:
         if not v.startswith(("http://", "https://")):
             msg = "Webhook URL must start with http:// or https://"
+            raise ValueError(msg)
+        # SSRF protection — block private/internal/metadata endpoints
+        from app.services.ssrf import is_url_safe
+        is_safe, reason = is_url_safe(v)
+        if not is_safe:
+            msg = f"Webhook URL blocked: {reason}"
             raise ValueError(msg)
         return v
 
