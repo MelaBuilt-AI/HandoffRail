@@ -31,7 +31,7 @@ CHECK_INTERVAL_SECONDS = 60
 async def _expire_packet(packet: Packet, session: AsyncSession) -> None:
     """Transition a single packet to expired status."""
     try:
-        transition = validate_transition(packet.status, "expired")
+        validate_transition(packet.status, "expired")
     except Exception:
         # Already terminal or invalid state — skip
         logger.debug("skip_expire", packet_id=packet.id, status=packet.status)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
@@ -12,14 +12,14 @@ from pydantic import BaseModel, Field, field_validator
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
 
-class Priority(str, Enum):
+class Priority(StrEnum):
     low = "low"
     normal = "normal"
     high = "high"
     critical = "critical"
 
 
-class PacketStatus(str, Enum):
+class PacketStatus(StrEnum):
     created = "created"
     claimed = "claimed"
     in_progress = "in_progress"
@@ -29,14 +29,14 @@ class PacketStatus(str, Enum):
     expired = "expired"
 
 
-class ConversationRole(str, Enum):
+class ConversationRole(StrEnum):
     user = "user"
     agent = "agent"
     system = "system"
     human = "human"
 
 
-class DependencyType(str, Enum):
+class DependencyType(StrEnum):
     data = "data"
     api = "api"
     human_approval = "human_approval"
@@ -44,7 +44,7 @@ class DependencyType(str, Enum):
     resource = "resource"
 
 
-class DependencyStatus(str, Enum):
+class DependencyStatus(StrEnum):
     blocked = "blocked"
     available = "available"
     unknown = "unknown"

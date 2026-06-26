@@ -333,7 +333,10 @@ class TestEventHistory:
         packet = await _create_packet(client)
         packet_id = packet["id"]
 
-        await client.post(f"/api/v1/packets/{packet_id}/claim", json={"agent_id": "billing-01", "agent_name": "BillingBot"})
+        await client.post(
+            f"/api/v1/packets/{packet_id}/claim",
+            json={"agent_id": "billing-01", "agent_name": "BillingBot"}
+        )
 
         resp = await client.get(f"/api/v1/packets/{packet_id}/history")
         assert resp.status_code == 200

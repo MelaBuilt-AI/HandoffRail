@@ -277,7 +277,7 @@ class TestRedisPubSubManager:
     @pytest.mark.asyncio
     async def test_fallback_without_redis(self):
         """When Redis is unavailable, publish should fall back to in-process callback."""
-        connected = await self.manager.connect()
+        await self.manager.connect()
         # Redis likely unavailable in test env
         # The method should not raise an exception
 
@@ -337,7 +337,7 @@ class TestWebSocketIntegration:
         received_events = []
 
         # Set up the connection manager with a callback that captures events
-        manager = get_connection_manager()
+        get_connection_manager()
         pubsub = get_pubsub_manager()
 
         async def capture_event(event):

@@ -55,7 +55,7 @@ def _packet_to_response(packet: Packet) -> HandoffPacketResponse:
 
 async def _get_packet_or_404(packet_id: UUID, db: AsyncSession, tenant_id: str | None = None) -> Packet:
     """Fetch a packet by ID or raise 404.
-    
+
     If tenant_id is provided, scopes the query to that tenant.
     """
     query = select(Packet).where(Packet.id == str(packet_id))
@@ -682,7 +682,7 @@ async def respond_to_hitl(
     # Transition status: awaiting_human -> claimed (agent picks up) or in_progress
     # Default to "claimed" so the next agent can pick it up
     new_status = "claimed"
-    transition = validate_transition(packet.status, new_status)
+    validate_transition(packet.status, new_status)
     packet.status = new_status
     packet.updated_at = now
 

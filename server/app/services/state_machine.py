@@ -9,12 +9,12 @@ Defines the valid state transitions for packet lifecycle:
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from fastapi import HTTPException, status
 
 
-class StatusTransition(str, Enum):
+class StatusTransition(StrEnum):
     """Named status transitions for audit logging."""
 
     CREATE = "created"

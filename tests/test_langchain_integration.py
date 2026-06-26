@@ -196,7 +196,8 @@ class TestLangChainResumeConversation:
         adapter = _make_adapter()
         response_data = _sample_packet_response()
         response_data["actions"]["pending"] = [
-            {"id": "a1", "description": "Process payment", "assignee": "billing-01", "priority": "high", "depends_on": []}
+            {"id": "a1", "description": "Process payment", "assignee": "billing-01",
+             "priority": "high", "depends_on": []}
         ]
         packet = PacketResponse.from_dict(response_data)
 

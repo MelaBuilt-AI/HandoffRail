@@ -690,7 +690,7 @@ class TestServeCommand:
     def test_serve_with_options(self):
         """Serve command should accept host, port, and reload options."""
         runner = CliRunner()
-        with patch.dict("sys.modules", {"uvicorn": MagicMock()}) as mocks:
+        with patch.dict("sys.modules", {"uvicorn": MagicMock()}):
             # We can't easily test uvicorn.run since it blocks,
             # but we can verify the command is registered and accepts options
             # Just check that the serve command exists and accepts args

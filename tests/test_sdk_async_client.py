@@ -157,7 +157,9 @@ class TestAsyncListPackets:
     async def test_list_packets(self):
         async with _make_client() as client:
             respx.get(f"{BASE_URL}/packets").mock(
-                return_value=httpx.Response(200, json={"packets": [_sample_packet_response()], "total": 1, "limit": 50, "offset": 0}),
+                return_value=httpx.Response(
+                    200, json={"packets": [_sample_packet_response()], "total": 1, "limit": 50, "offset": 0}
+                ),
             )
 
             result = await client.list_packets()

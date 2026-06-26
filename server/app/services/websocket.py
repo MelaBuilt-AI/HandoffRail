@@ -76,7 +76,7 @@ class Subscription:
         if not self.statuses and not self.packet_ids and not self.agent_ids:
             return True
 
-        event_type = event.get("type", "")
+        event.get("type", "")
         data = event.get("data", {})
 
         # Match by status in event type (e.g. "packet.created" → status "created")

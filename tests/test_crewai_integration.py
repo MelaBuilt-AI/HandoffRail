@@ -60,11 +60,13 @@ def _sample_packet_response(packet_id: str | None = None) -> dict:
             "custom": {},
         },
         "decisions": [
-            {"id": "d1", "decision": "Process payment", "rationale": "Customer paid", "alternatives": [], "decided_by": "billing-01", "timestamp": "2026-05-13T21:10:00Z"}
+            {"id": "d1", "decision": "Process payment", "rationale": "Customer paid",
+             "alternatives": [], "decided_by": "billing-01", "timestamp": "2026-05-13T21:10:00Z"}
         ],
         "actions": {
             "pending": [
-                {"id": "a1", "description": "Onboard customer", "assignee": "support-01", "priority": "normal", "depends_on": []}
+                {"id": "a1", "description": "Onboard customer", "assignee": "support-01",
+                 "priority": "normal", "depends_on": []}
             ],
             "completed": [],
             "failed": [],
@@ -651,7 +653,7 @@ class TestCrewAIRespondToHITL:
             return_value=httpx.Response(200, json=response_data),
         )
 
-        result = adapter.respond_to_hitl(packet_id, response="Yes")
+        adapter.respond_to_hitl(packet_id, response="Yes")
         # Verify the responded_by defaults to agent_id
         request_body = json.loads(route.calls[0].request.content.decode())
         assert request_body["responded_by"] == "billing-01"

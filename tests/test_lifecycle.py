@@ -587,7 +587,8 @@ class TestFullLifecycle:
             json={
                 "status": "in_progress",
                 "decisions": [
-                    {"id": "d1", "decision": "Applied upgrade", "rationale": "Customer eligible", "decided_by": "billing-01"},
+                    {"id": "d1", "decision": "Applied upgrade", "rationale": "Customer eligible",
+                     "decided_by": "billing-01"},
                 ],
             },
         )

@@ -357,7 +357,8 @@ class TestPrometheusMetrics:
         resp = await client.get("/metrics")
         assert resp.status_code == 200
         # Prometheus exposition format
-        assert "text/plain" in resp.headers.get("content-type", "") or "application/openmetrics-text" in resp.headers.get("content-type", "")
+        assert ("text/plain" in resp.headers.get("content-type", "")
+                or "application/openmetrics-text" in resp.headers.get("content-type", ""))
         body = resp.text
         # Should contain our custom metrics
         assert "handoffrail_requests_total" in body or "handoffrail" in body
@@ -413,8 +414,8 @@ class TestTierRateLimits:
     async def test_free_tier_rate_limited(self, client):
         """Free tier should be rate limited after hitting quota."""
         # Make requests until rate limited
-        resp1 = await client.get("/api/v1/packets")
-        resp2 = await client.get("/api/v1/packets")
+        await client.get("/api/v1/packets")
+        await client.get("/api/v1/packets")
 
         # Third request should be rate limited
         resp3 = await client.get("/api/v1/packets")
