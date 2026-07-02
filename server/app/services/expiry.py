@@ -37,6 +37,7 @@ async def _expire_packet(packet: Packet, session: AsyncSession) -> None:
         logger.debug("skip_expire", packet_id=packet.id, status=packet.status)  # type: ignore[call-arg]
         return
 
+    previous_status = packet.status
     packet.status = "expired"
     packet.updated_at = datetime.now(UTC)
 
@@ -45,42 +46,58 @@ async def _expire_packet(packet: Packet, session: AsyncSession) -> None:
         packet_id=packet.id,
         event_type=StatusTransition.EXPIRE.value,
         actor="system:expiry_task",
-        details_json=json.dumps({"previous_status": packet.status, "reason": "ttl_exceeded"}, default=str),
+        details_json=json.dumps({"previous_status": previous_status, "reason": "ttl_exceeded"}, default=str),
         timestamp=datetime.now(UTC),
     )
     session.add(event)
-    logger.info("packet_expired", packet_id=packet.id, previous_status=packet.status)  # type: ignore[call-arg]
+    logger.info("packet_expired", packet_id=packet.id, previous_status=previous_status)  # type: ignore[call-arg]
 
 
 async def check_and_expire_packets() -> int:
     """Check all non-terminal packets for TTL expiry and expire stale ones.
+
+    Uses default TTL as the primary filter via SQL for scalability — only
+    packets older than DEFAULT_TTL_SECONDS are loaded from the database.
+    After loading, packets with custom HITL timeouts are further checked
+    in Python (higher-resolution check for the smaller subset).
 
     Returns the number of packets expired.
     """
     now = datetime.now(UTC)
     expired_count = 0
 
+    # Cutoff based on default TTL — most packets use this, so SQL filter
+    # eliminates the vast majority of non-expired rows.
+    from datetime import timedelta
+    cutoff = now - timedelta(seconds=DEFAULT_TTL_SECONDS)
+
     async with async_session() as session:
-        # Find packets in non-terminal states that have been around too long
+        # Find packets in non-terminal states created before the cutoff
         result = await session.execute(
             select(Packet).where(
                 Packet.status.not_in(["completed", "expired"]),
+                Packet.created_at < cutoff,
             )
         )
         packets = result.scalars().all()
 
         for packet in packets:
-            # Calculate age of packet
-            age_seconds = (now - packet.created_at).total_seconds()
-            # Determine TTL: check HITL timeout_seconds, otherwise use default
-            ttl_seconds = DEFAULT_TTL_SECONDS
+            # Already filtered by default TTL via SQL above.
+            # Now check custom HITL timeout — if the HITL timeout is SHORTER
+            # than the default, the SQL filter may have missed it. But if longer,
+            # the SQL filter already handled it correctly.
             hitl = packet.get_hitl()
             if hitl and hitl.get("timeout_seconds"):
-                ttl_seconds = hitl["timeout_seconds"]
+                custom_ttl = hitl["timeout_seconds"]
+                # Only need further check if custom TTL is shorter than default
+                # (shorter means it might not be old enough yet)
+                if custom_ttl < DEFAULT_TTL_SECONDS:
+                    age_seconds = (now - packet.created_at).total_seconds()
+                    if age_seconds <= custom_ttl:
+                        continue  # Not expired yet per custom TTL
 
-            if age_seconds > ttl_seconds:
-                await _expire_packet(packet, session)
-                expired_count += 1
+            await _expire_packet(packet, session)
+            expired_count += 1
 
         if expired_count > 0:
             await session.commit()

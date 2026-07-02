@@ -32,6 +32,10 @@ function switchView(view) {
 
 // ── WebSocket ──────────────────────────────────────────────────────────────────
 
+let wsReconnectDelay = 1000;
+const WS_MAX_RECONNECT_DELAY = 30000;
+const WS_RECONNECT_MULTIPLIER = 1.5;
+
 function connectWS() {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${location.host}/ws`;
@@ -40,12 +44,14 @@ function connectWS() {
     ws.onopen = () => {
         document.getElementById('ws-status').className = 'status-dot connected';
         document.getElementById('ws-label').textContent = 'Connected';
+        wsReconnectDelay = 1000; // Reset on successful connection
     };
 
     ws.onclose = () => {
         document.getElementById('ws-status').className = 'status-dot disconnected';
         document.getElementById('ws-label').textContent = 'Disconnected';
-        setTimeout(connectWS, 3000);
+        setTimeout(connectWS, wsReconnectDelay);
+        wsReconnectDelay = Math.min(wsReconnectDelay * WS_RECONNECT_MULTIPLIER, WS_MAX_RECONNECT_DELAY);
     };
 
     ws.onmessage = (event) => {
@@ -139,14 +145,16 @@ async function loadPackets() {
     let url = `${API_BASE}/packets?limit=${LIMIT}&offset=${offset}`;
     if (status) url += `&status=${status}`;
 
+    showLoading('packets-tbody');
     try {
         const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         allPackets = data.packets || [];
         renderPackets(allPackets, search);
         renderPagination(data.total || 0);
     } catch (e) {
-        console.error('Failed to load packets:', e);
+        showError('packets-tbody', `Failed to load packets: ${e.message}`);
     }
 }
 
@@ -211,11 +219,16 @@ document.getElementById('filter-search')?.addEventListener('input', () => {
 
 async function viewDetail(id) {
     currentPacketId = id;
+    // Show loading in detail sections
+    ['detail-meta', 'detail-context', 'detail-decisions', 'detail-actions', 'detail-history', 'detail-json'].forEach(cid => showLoading(cid));
+
     try {
         const [packetRes, historyRes] = await Promise.all([
             fetch(`${API_BASE}/packets/${id}`),
             fetch(`${API_BASE}/packets/${id}/history`),
         ]);
+        if (!packetRes.ok) throw new Error(`Packet fetch failed: HTTP ${packetRes.status}`);
+        if (!historyRes.ok) throw new Error(`History fetch failed: HTTP ${historyRes.status}`);
         const packet = await packetRes.json();
         const history = await historyRes.json();
 
@@ -279,7 +292,10 @@ async function viewDetail(id) {
 
         switchView('detail');
     } catch (e) {
-        console.error('Failed to load detail:', e);
+        showError('detail-meta', `Failed to load packet: ${e.message}`);
+        ['detail-context', 'detail-decisions', 'detail-actions', 'detail-history', 'detail-json'].forEach(cid => {
+            document.getElementById(cid).innerHTML = '';
+        });
     }
 }
 
@@ -290,11 +306,13 @@ function fields(pairs) {
 // ── HITL Queue ─────────────────────────────────────────────────────────────────
 
 async function loadHITL() {
+    const container = document.getElementById('hitl-list');
+    showLoading('hitl-list');
     try {
         const res = await fetch(`${API_BASE}/packets/awaiting`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         const packets = data.packets || [];
-        const container = document.getElementById('hitl-list');
 
         if (!packets.length) {
             container.innerHTML = '<div class="empty-state">No packets awaiting human review</div>';
@@ -317,7 +335,7 @@ async function loadHITL() {
             </div>`;
         }).join('');
     } catch (e) {
-        console.error('Failed to load HITL:', e);
+        showError('hitl-list', `Failed to load HITL queue: ${e.message}`);
     }
 }
 
@@ -365,8 +383,11 @@ function showHITLModal(packetId) {
 // ── Stats ──────────────────────────────────────────────────────────────────────
 
 async function loadStats() {
+    const bars = document.getElementById('status-bars');
+    showLoading('status-bars');
     try {
         const res = await fetch(`${API_BASE}/stats`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
 
         document.getElementById('stat-total').textContent = data.total_packets ?? '—';
@@ -396,7 +417,7 @@ async function loadStats() {
             </div>
         `).join('');
     } catch (e) {
-        console.error('Failed to load stats:', e);
+        showError('status-bars', `Failed to load stats: ${e.message}`);
     }
 }
 
@@ -409,6 +430,20 @@ function formatDuration(seconds) {
 // ── Back button ────────────────────────────────────────────────────────────────
 
 document.getElementById('btn-back')?.addEventListener('click', () => switchView('packets'));
+
+// ── Loading & Error UI ───────────────────────────────────────────────────────
+
+function showLoading(containerId) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    el.innerHTML = `<div class="loading-state"><div class="spinner"></div><span>Loading...</span></div>`;
+}
+
+function showError(containerId, message) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    el.innerHTML = `<div class="error-state"><span class="error-icon">⚠</span> ${message}<br><button class="btn btn-sm btn-primary" onclick="location.reload()">Retry</button></div>`;
+}
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
