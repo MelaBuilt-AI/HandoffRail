@@ -16,6 +16,7 @@
             <a href="#" class="nav-link" data-view="hitl">HITL Queue</a>
             <a href="#" class="nav-link" data-view="live">Live Feed</a>
             <a href="#" class="nav-link" data-view="stats">Stats</a>
+            <a href="#" class="nav-link" data-view="health">Health</a>
         </div>
         <div class="nav-status">
             <span id="ws-status" class="status-dot disconnected"></span>
@@ -147,6 +148,87 @@
             <div class="chart-container">
                 <h3>Packets by Status</h3>
                 <div id="status-bars" class="status-bars"></div>
+            </div>
+        </section>
+
+        <!-- Health / Observability View -->
+        <section id="view-health" class="view">
+            <div class="view-header">
+                <h2>Health & Observability</h2>
+                <button id="btn-refresh-health" class="btn btn-primary">Refresh</button>
+            </div>
+
+            <!-- Service Status Cards -->
+            <div class="health-row">
+                <div class="health-status-card" id="health-service-card">
+                    <div class="health-card-header">
+                        <span class="health-indicator" id="health-dot"></span>
+                        <span class="health-card-title">Service Status</span>
+                    </div>
+                    <div class="health-card-value" id="health-status-text">Checking...</div>
+                    <div class="health-card-detail" id="health-detail"></div>
+                </div>
+                <div class="health-status-card" id="health-db-card">
+                    <div class="health-card-header">
+                        <span class="health-indicator" id="health-db-dot"></span>
+                        <span class="health-card-title">Database</span>
+                    </div>
+                    <div class="health-card-value" id="health-db-status">Checking...</div>
+                    <div class="health-card-detail">SQLite / PostgreSQL</div>
+                </div>
+            </div>
+
+            <!-- Metrics Summary Cards -->
+            <div class="health-section-title">
+                <h3>📊 Metrics Summary</h3>
+            </div>
+            <div class="stats-grid" id="health-metrics-grid">
+                <div class="stat-card health-metric">
+                    <div class="stat-value" id="health-metric-total-reqs">—</div>
+                    <div class="stat-label">Total Requests</div>
+                </div>
+                <div class="stat-card health-metric">
+                    <div class="stat-value" id="health-metric-active-ws">—</div>
+                    <div class="stat-label">Active WS Connections</div>
+                </div>
+                <div class="stat-card health-metric">
+                    <div class="stat-value" id="health-metric-total-packets">—</div>
+                    <div class="stat-label">Total Packets</div>
+                </div>
+                <div class="stat-card health-metric">
+                    <div class="stat-value" id="health-metric-packets-24h">—</div>
+                    <div class="stat-label">Packets (24h)</div>
+                </div>
+                <div class="stat-card health-metric">
+                    <div class="stat-value" id="health-metric-hitl">—</div>
+                    <div class="stat-label">HITL Queue</div>
+                </div>
+                <div class="stat-card health-metric">
+                    <div class="stat-value" id="health-metric-handoffs">—</div>
+                    <div class="stat-label">Handoffs</div>
+                </div>
+            </div>
+
+            <!-- Request Latency Distribution -->
+            <div class="health-section-title">
+                <h3>⏱ Request Latency Distribution</h3>
+            </div>
+            <div class="detail-card">
+                <div id="health-latency-table">
+                    <div class="loading-state"><div class="spinner"></div><span>Loading latency data...</span></div>
+                </div>
+            </div>
+
+            <!-- Prometheus-style Metrics Card -->
+            <div class="health-section-title">
+                <h3>🔬 Prometheus Metrics Summary</h3>
+            </div>
+            <div class="prometheus-card" id="prometheus-card">
+                <div class="prometheus-header">
+                    <span class="prometheus-title">handoffrail_metrics</span>
+                    <span class="prometheus-scrape-interval">scrape_interval: 15s</span>
+                </div>
+                <pre id="prometheus-content" class="prometheus-content">Fetching metrics...</pre>
             </div>
         </section>
     </main>

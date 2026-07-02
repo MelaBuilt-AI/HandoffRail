@@ -28,6 +28,12 @@ function switchView(view) {
     if (view === 'packets') loadPackets();
     if (view === 'hitl') loadHITL();
     if (view === 'stats') loadStats();
+    if (view === 'health') {
+        loadHealth();
+        startHealthRefresh();
+    } else {
+        stopHealthRefresh();
+    }
 }
 
 // ── WebSocket ──────────────────────────────────────────────────────────────────
@@ -83,6 +89,9 @@ function handleWSEvent(event) {
     }
     if (currentView === 'stats') {
         loadStats();
+    }
+    if (currentView === 'health') {
+        debounceHealthRefresh();
     }
 }
 
@@ -426,6 +435,219 @@ function formatDuration(seconds) {
     if (seconds < 3600) return `${(seconds / 60).toFixed(1)}m`;
     return `${(seconds / 3600).toFixed(1)}h`;
 }
+
+// ── Health / Observability Panel ─────────────────────────────────────────────────
+
+async function loadHealth() {
+    // Fetch health endpoints
+    const healthPromises = [
+        fetch('/health').then(r => r.ok ? r.json() : {status: 'error'}),
+        fetch('/ready').then(r => r.ok ? r.json() : {status: 'error', db: false}),
+        fetch(`${API_BASE}/stats`).then(r => r.ok ? r.json() : {}),
+        fetch('/metrics').then(r => r.ok ? r.text() : ''),
+    ];
+
+    try {
+        const [health, ready, stats, metricsText] = await Promise.all(healthPromises);
+        renderHealthStatus(health, ready);
+        renderHealthMetrics(stats);
+        renderLatencyTable(metricsText);
+        renderPrometheusCard(metricsText);
+    } catch (e) {
+        console.error('Health load failed:', e);
+        showError('health-service-card', `Failed to load health data: ${e.message}`);
+    }
+}
+
+function renderHealthStatus(health, ready) {
+    // Service status
+    const dot = document.getElementById('health-dot');
+    const statusText = document.getElementById('health-status-text');
+    const detail = document.getElementById('health-detail');
+
+    const serviceOk = health.status === 'ok';
+    dot.className = 'health-indicator ' + (serviceOk ? 'status-ok' : 'status-err');
+    statusText.textContent = serviceOk ? 'Healthy' : 'Unhealthy';
+    statusText.style.color = serviceOk ? 'var(--green)' : 'var(--red)';
+    detail.textContent = 'handoffrail v0.2.0 • ' + (health.service || 'API');
+
+    // DB status
+    const dbDot = document.getElementById('health-db-dot');
+    const dbStatus = document.getElementById('health-db-status');
+    const dbOk = ready.db === true;
+    dbDot.className = 'health-indicator ' + (dbOk ? 'status-ok' : 'status-err');
+    dbStatus.textContent = dbOk ? 'Connected' : 'Disconnected';
+    dbStatus.style.color = dbOk ? 'var(--green)' : 'var(--red)';
+}
+
+function renderHealthMetrics(stats) {
+    if (!stats || Object.keys(stats).length === 0) return;
+
+    document.getElementById('health-metric-active-ws').textContent = stats.active_ws_connections ?? '—';
+    document.getElementById('health-metric-total-packets').textContent = stats.total_packets ?? '—';
+    document.getElementById('health-metric-packets-24h').textContent = stats.packets_last_24h ?? '—';
+    document.getElementById('health-metric-hitl').textContent = stats.hitl_queue_depth ?? '—';
+
+    // Estimate handoffs from status counts
+    const statuses = stats.packets_by_status || {};
+    const totalHandoffs = Object.values(statuses).reduce((a, b) => a + b, 0);
+    document.getElementById('health-metric-handoffs').textContent = totalHandoffs || stats.total_packets || '—';
+}
+
+function parsePrometheusMetrics(text) {
+    if (!text) return { counters: {}, histograms: {}, gauges: {} };
+    const lines = text.split('\n');
+    const counters = {};
+    const histograms = {};
+    const gauges = {};
+
+    for (const line of lines) {
+        if (line.startsWith('#') || line.trim() === '') continue;
+
+        // Parse metric lines: name{labels} value
+        const match = line.match(/^(\w+)(\{[^}]*\})?\s+([\d.e+]+)/);
+        if (!match) continue;
+
+        const name = match[1];
+        const labels = match[2] || '';
+        const value = parseFloat(match[3]);
+
+        if (isNaN(value)) continue;
+
+        if (name.endsWith('_total') || name.endsWith('_count')) {
+            counters[name] = (counters[name] || 0) + value;
+        } else if (name.includes('_bucket') || name.endsWith('_seconds')) {
+            if (!histograms[name]) histograms[name] = [];
+            histograms[name].push({ labels, value });
+        } else if (name.startsWith('handoffrail_')) {
+            gauges[name] = value;
+        }
+    }
+
+    return { counters, histograms, gauges };
+}
+
+function renderLatencyTable(metricsText) {
+    const container = document.getElementById('health-latency-table');
+
+    if (!metricsText) {
+        container.innerHTML = '<div class="empty-state">No metrics data available — start the server with Prometheus metrics enabled</div>';
+        return;
+    }
+
+    const parsed = parsePrometheusMetrics(metricsText);
+
+    // Look for request latency histogram
+    const latencies = parsed.histograms['handoffrail_request_latency_seconds_bucket'] || [];
+
+    if (latencies.length === 0) {
+        // Show gauges as latency info when no histogram
+        const latGauge = parsed.gauges['handoffrail_request_latency_seconds'];
+        container.innerHTML = `
+            <div class="health-latency-grid">
+                <div class="empty-state">Waiting for Prometheus histogram data to populate...</div>
+            </div>
+        `;
+        return;
+    }
+
+    // Build a latency distribution table
+    const buckets = latencies.map(l => ({
+        le: parseFloat(l.labels.match(/le="([^"]+)"/)?.[1] || '0'),
+        count: l.value,
+    })).filter(b => !isNaN(b.le)).sort((a, b) => a.le - b.le);
+
+    const totalCount = buckets.length > 0 ? buckets[buckets.length - 1].count : 0;
+
+    let rows = buckets.map(b => {
+        const pct = totalCount > 0 ? ((b.count / totalCount) * 100).toFixed(1) : '0.0';
+        const leLabel = b.le < 0.1 ? `${(b.le * 1000).toFixed(0)}ms` :
+                        b.le < 1 ? `${(b.le * 1000).toFixed(0)}ms` :
+                        `${b.le.toFixed(2)}s`;
+        const barWidth = Math.max(1, parseFloat(pct));
+        return `<div class="latency-row">
+            <span class="latency-label">≤ ${leLabel}</span>
+            <div class="latency-bar-fill">
+                <div class="latency-bar-inner" style="width:${barWidth}%"></div>
+            </div>
+            <span class="latency-count">${b.count.toLocaleString()}</span>
+            <span class="latency-pct">${pct}%</span>
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="latency-table">
+            <div class="latency-header">
+                <span class="latency-label">Bucket</span>
+                <span class="latency-bar-fill">Distribution</span>
+                <span class="latency-count">Count</span>
+                <span class="latency-pct">%</span>
+            </div>
+            ${rows}
+            <div class="latency-total">
+                <span class="latency-label">Total</span>
+                <span></span>
+                <span class="latency-count">${totalCount.toLocaleString()}</span>
+                <span class="latency-pct">100%</span>
+            </div>
+        </div>
+    `;
+}
+
+function renderPrometheusCard(metricsText) {
+    const container = document.getElementById('prometheus-content');
+    if (!metricsText) {
+        container.textContent = 'No metrics available — ensure server is running with Prometheus endpoint.';
+        return;
+    }
+
+    // Extract key metrics for a clean summary
+    const lines = metricsText.split('\n');
+    const summaryLines = [];
+
+    for (const line of lines) {
+        if (line.startsWith('# HELP') || line.startsWith('# TYPE')) {
+            summaryLines.push(line);
+        } else if (line.startsWith('handoffrail_')) {
+            summaryLines.push(line);
+        }
+    }
+
+    // If too many lines, show a concise subset
+    const display = summaryLines.length > 60
+        ? summaryLines.filter(l => !l.includes('_bucket') && !l.includes('_created'))
+        : summaryLines;
+
+    container.textContent = display.join('\n') || 'No handoffrail_ metrics found.';
+}
+
+// Refresh health on timer when health view is active
+let healthRefreshTimer = null;
+function startHealthRefresh() {
+    stopHealthRefresh();
+    healthRefreshTimer = setInterval(() => {
+        if (currentView === 'health') loadHealth();
+    }, 15000);
+}
+function stopHealthRefresh() {
+    if (healthRefreshTimer) {
+        clearInterval(healthRefreshTimer);
+        healthRefreshTimer = null;
+    }
+}
+
+let healthRefreshDebounceTimer = null;
+function debounceHealthRefresh() {
+    clearTimeout(healthRefreshDebounceTimer);
+    healthRefreshDebounceTimer = setTimeout(() => {
+        if (currentView === 'health') loadHealth();
+    }, 1000);
+}
+
+document.getElementById('btn-refresh-health')?.addEventListener('click', () => {
+    loadHealth();
+    if (currentView === 'health') startHealthRefresh();
+});
 
 // ── Back button ────────────────────────────────────────────────────────────────
 
