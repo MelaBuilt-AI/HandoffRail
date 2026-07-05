@@ -8,7 +8,7 @@
 
 When Agent A finishes its part and hands off to Agent B (or a human), the full context — decisions, pending actions, dependencies, conversation state — survives the transition intact. **No context loss, no repetition, no dropped threads.**
 
-**430 tests passing · 24 skipped · 19 API endpoints · Python SDK + CLI · LangChain & CrewAI adapters**
+**430 Python tests · 99 TypeScript tests · 19 API endpoints · Python SDK + CLI · TypeScript SDK · LangChain & CrewAI adapters**
 
 ## Quick Start
 
@@ -22,6 +22,14 @@ When Agent A finishes its part and hands off to Agent B (or a human), the full c
 ```bash
 pip install handoffrail-sdk
 ```
+
+### TypeScript SDK (npm)
+
+```bash
+npm install handoffrail-sdk
+```
+
+See [`sdk-typescript/`](sdk-typescript/) for the full TypeScript SDK with sync/async clients, fluent builders, and Vercel AI SDK integration.
 
 ### Install & Run from Source
 
