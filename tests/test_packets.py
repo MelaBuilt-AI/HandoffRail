@@ -300,3 +300,214 @@ async def test_health_check(client: AsyncClient):
     response = await client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+# ── Batch Create Tests ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_batch_create_success(client: AsyncClient):
+    """POST /packets/batch creates multiple packets successfully."""
+    payload = {
+        "packets": [
+            _minimal_payload(),
+            _minimal_payload(),
+            _minimal_payload(),
+        ]
+    }
+    response = await client.post("/api/v1/packets/batch", json=payload)
+    assert response.status_code == 201
+
+    data = response.json()
+    assert len(data["created"]) == 3
+    assert len(data["errors"]) == 0
+    for pkt in data["created"]:
+        assert pkt["status"] == "created"
+        assert pkt["id"] is not None
+
+
+@pytest.mark.asyncio
+async def test_batch_create_partial_failure(client: AsyncClient):
+    """POST /packets/batch with one invalid packet returns partial success."""
+    good = _minimal_payload()
+    bad = {
+        "metadata": {
+            "source_agent": {"id": "bad", "name": "Bad"},
+        },
+        "context": {"summary": "bad"},
+    }
+    payload = {"packets": [good, bad, good]}
+    response = await client.post("/api/v1/packets/batch", json=payload)
+    assert response.status_code == 201
+
+    data = response.json()
+    assert len(data["created"]) == 2
+    assert len(data["errors"]) == 1
+    assert data["errors"][0]["index"] == 1
+
+
+@pytest.mark.asyncio
+async def test_batch_create_exceeds_limit(client: AsyncClient):
+    """POST /packets/batch with >50 packets returns 400."""
+    payload = {"packets": [_minimal_payload() for _ in range(51)]}
+    response = await client.post("/api/v1/packets/batch", json=payload)
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_batch_create_with_hitl(client: AsyncClient):
+    """POST /packets/batch with HITL packets sets awaiting_human status."""
+    payload = {
+        "packets": [
+            _minimal_payload(),
+            _hitl_payload(),
+        ]
+    }
+    response = await client.post("/api/v1/packets/batch", json=payload)
+    assert response.status_code == 201
+
+    data = response.json()
+    assert len(data["created"]) == 2
+    assert data["created"][0]["status"] == "created"
+    assert data["created"][1]["status"] == "awaiting_human"
+
+
+# ── Batch Claim Tests ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_batch_claim_success(client: AsyncClient):
+    """POST /packets/batch/claim claims multiple packets."""
+    # Create 3 packets first
+    ids = []
+    for _ in range(3):
+        resp = await client.post("/api/v1/packets", json=_minimal_payload())
+        assert resp.status_code == 201
+        ids.append(resp.json()["id"])
+
+    # Batch claim them
+    response = await client.post("/api/v1/packets/batch/claim", json={
+        "packet_ids": ids,
+        "agent_id": "batch-agent",
+        "agent_name": "BatchAgent",
+        "framework": "test",
+    })
+    assert response.status_code == 200
+
+    data = response.json()
+    assert len(data["claimed"]) == 3
+    assert len(data["errors"]) == 0
+    for pkt in data["claimed"]:
+        assert pkt["status"] == "claimed"
+
+
+@pytest.mark.asyncio
+async def test_batch_claim_already_claimed(client: AsyncClient):
+    """POST /packets/batch/claim returns error for already-claimed packets."""
+    # Create 2 packets
+    ids = []
+    for _ in range(2):
+        resp = await client.post("/api/v1/packets", json=_minimal_payload())
+        assert resp.status_code == 201
+        ids.append(resp.json()["id"])
+
+    # Claim first one
+    await client.post(f"/api/v1/packets/{ids[0]}/claim", json={
+        "agent_id": "other-agent",
+        "agent_name": "OtherAgent",
+    })
+
+    # Batch claim both
+    response = await client.post("/api/v1/packets/batch/claim", json={
+        "packet_ids": ids,
+        "agent_id": "batch-agent",
+        "agent_name": "BatchAgent",
+        "framework": "test",
+    })
+    assert response.status_code == 200
+
+    data = response.json()
+    assert len(data["claimed"]) == 1
+    assert len(data["errors"]) == 1
+    assert "Already claimed" in data["errors"][0]["error"]
+
+
+@pytest.mark.asyncio
+async def test_batch_claim_not_found(client: AsyncClient):
+    """POST /packets/batch/claim returns error for non-existent packets."""
+    response = await client.post("/api/v1/packets/batch/claim", json={
+        "packet_ids": ["00000000-0000-0000-0000-000000000000"],
+        "agent_id": "batch-agent",
+        "agent_name": "BatchAgent",
+    })
+    assert response.status_code == 200
+
+    data = response.json()
+    assert len(data["claimed"]) == 0
+    assert len(data["errors"]) == 1
+
+
+# ── Batch Complete Tests ───────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_batch_complete_success(client: AsyncClient):
+    """POST /packets/batch/complete completes multiple packets."""
+    # Create and claim 3 packets
+    ids = []
+    for _ in range(3):
+        resp = await client.post("/api/v1/packets", json=_minimal_payload())
+        assert resp.status_code == 201
+        pkt_id = resp.json()["id"]
+        # Claim it
+        await client.post(f"/api/v1/packets/{pkt_id}/claim", json={
+            "agent_id": "batch-agent",
+            "agent_name": "BatchAgent",
+        })
+        # Move to in_progress (required by state machine)
+        await client.patch(f"/api/v1/packets/{pkt_id}", json={"status": "in_progress"})
+        ids.append(pkt_id)
+
+    # Batch complete them
+    response = await client.post("/api/v1/packets/batch/complete", json={
+        "packet_ids": ids,
+    })
+    assert response.status_code == 200
+
+    data = response.json()
+    assert len(data["completed"]) == 3
+    assert len(data["errors"]) == 0
+    for pkt in data["completed"]:
+        assert pkt["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_batch_complete_not_found(client: AsyncClient):
+    """POST /packets/batch/complete returns error for non-existent packets."""
+    response = await client.post("/api/v1/packets/batch/complete", json={
+        "packet_ids": ["00000000-0000-0000-0000-000000000000"],
+    })
+    assert response.status_code == 200
+
+    data = response.json()
+    assert len(data["completed"]) == 0
+    assert len(data["errors"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_batch_complete_wrong_status(client: AsyncClient):
+    """POST /packets/batch/complete returns error for packets in wrong status."""
+    # Create a packet but don't claim it (status=created, can't go directly to completed)
+    resp = await client.post("/api/v1/packets", json=_minimal_payload())
+    assert resp.status_code == 201
+    pkt_id = resp.json()["id"]
+
+    response = await client.post("/api/v1/packets/batch/complete", json={
+        "packet_ids": [pkt_id],
+    })
+    assert response.status_code == 200
+
+    data = response.json()
+    assert len(data["completed"]) == 0
+    assert len(data["errors"]) == 1
+    assert "Cannot complete" in data["errors"][0]["error"]

@@ -76,6 +76,9 @@ class Settings(BaseSettings):
         "business": 25,
     }
 
+    # ── Batch operations ────────────────────────────────────────────────────
+    batch_max_size: int = 50
+
     model_config = {
         "env_prefix": "HR_",
         "env_file": ".env",

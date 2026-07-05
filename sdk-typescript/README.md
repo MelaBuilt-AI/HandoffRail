@@ -108,6 +108,155 @@ const packet = await client.createPacket(
 
 ---
 
+## WebSocket Client (Real-Time Events)
+
+The SDK includes an `AsyncWebSocketClient` for real-time event streaming from HandoffRail's `/ws` endpoint.
+
+### Installation
+
+For Node.js, install the `ws` package:
+
+```bash
+npm install handoffrail-sdk ws
+```
+
+In the browser, the native `WebSocket` API is used — no extra dependencies needed.
+
+### Quickstart
+
+```typescript
+import { AsyncWebSocketClient } from 'handoffrail-sdk';
+
+const client = new AsyncWebSocketClient({
+  baseUrl: 'http://localhost:8080',
+  apiKey: process.env.HANDOFFRAIL_API_KEY,
+});
+
+// Register event handlers
+client.onPacketCreated = (event) => {
+  console.log(`New packet: ${event.packet_id}`);
+};
+
+client.onPacketCompleted = (event) => {
+  console.log(`Packet completed: ${event.packet_id}`);
+};
+
+// Connect and subscribe to channels
+await client.connect();
+await client.subscribe('status:created');
+await client.subscribe('status:completed');
+
+// ... listen for events ...
+
+// Disconnect when done
+await client.close();
+```
+
+### Node.js Usage
+
+In Node.js, provide a WebSocket factory using the `ws` package:
+
+```typescript
+import WebSocket from 'ws';
+import { AsyncWebSocketClient } from 'handoffrail-sdk';
+
+const client = new AsyncWebSocketClient({
+  baseUrl: 'http://localhost:8080',
+  apiKey: process.env.HANDOFFRAIL_API_KEY,
+  webSocketFactory: (url) => new WebSocket(url),
+});
+```
+
+### Configuration
+
+```typescript
+const client = new AsyncWebSocketClient({
+  baseUrl: 'http://localhost:8080',        // HTTP base URL (ws:// derived automatically)
+  apiKey: 'sk-...',                         // API key for authentication
+  reconnect: true,                          // Auto-reconnect on disconnect (default: true)
+  reconnectDelay: 1000,                     // Initial reconnect delay in ms (default: 1000)
+  maxReconnectDelay: 30000,                 // Max reconnect delay in ms (default: 30000)
+  reconnectMultiplier: 2.0,                 // Exponential backoff multiplier (default: 2.0)
+  webSocketFactory: (url) => new WebSocket(url), // Custom WebSocket factory
+});
+```
+
+### Event Types
+
+| Event Constant | Value | Description |
+|---------------|-------|-------------|
+| `EVENT_PACKET_CREATED` | `packet.created` | A new handoff packet was created |
+| `EVENT_PACKET_CLAIMED` | `packet.claimed` | A packet was claimed by an agent |
+| `EVENT_PACKET_UPDATED` | `packet.updated` | A packet was updated |
+| `EVENT_PACKET_IN_PROGRESS` | `packet.in_progress` | A packet moved to in-progress |
+| `EVENT_PACKET_AWAITING_HUMAN` | `packet.awaiting_human` | A packet is awaiting human input |
+| `EVENT_PACKET_COMPLETED` | `packet.completed` | A packet was completed |
+| `EVENT_PACKET_FAILED` | `packet.failed` | A packet failed |
+| `EVENT_PACKET_EXPIRED` | `packet.expired` | A packet expired |
+| `EVENT_PACKET_CHAINED` | `packet.chained` | A chained follow-up packet was created |
+| `EVENT_HITL_RESPONSE_READY` | `hitl.response_ready` | A HITL response is ready |
+
+### Event Object
+
+```typescript
+interface HandoffRailEvent {
+  event_type: string;                    // e.g. "packet.created"
+  packet_id: string;                     // The packet ID
+  timestamp: string;                     // ISO-8601 timestamp
+  data: Record<string, unknown>;         // Full event payload
+}
+```
+
+### Callbacks
+
+| Callback | Signature | Description |
+|----------|-----------|-------------|
+| `onPacketCreated` | `(event: HandoffRailEvent) => void` | Fired on packet creation |
+| `onPacketClaimed` | `(event: HandoffRailEvent) => void` | Fired on packet claim |
+| `onPacketUpdated` | `(event: HandoffRailEvent) => void` | Fired on packet update |
+| `onPacketInProgress` | `(event: HandoffRailEvent) => void` | Fired on in-progress |
+| `onPacketAwaitingHuman` | `(event: HandoffRailEvent) => void` | Fired on awaiting human |
+| `onPacketCompleted` | `(event: HandoffRailEvent) => void` | Fired on completion |
+| `onPacketFailed` | `(event: HandoffRailEvent) => void` | Fired on failure |
+| `onPacketExpired` | `(event: HandoffRailEvent) => void` | Fired on expiry |
+| `onPacketChained` | `(event: HandoffRailEvent) => void` | Fired on chain creation |
+| `onHitlResponseReady` | `(event: HandoffRailEvent) => void` | Fired on HITL response |
+| `onEvent` | `(event: HandoffRailEvent) => void` | Generic — fires for all events |
+| `onConnected` | `() => void` | Fired on connection established |
+| `onDisconnected` | `() => void` | Fired on disconnection |
+| `onError` | `(error: Error) => void` | Fired on WebSocket error |
+
+### Channel Subscriptions
+
+```typescript
+// Subscribe to events by status
+await client.subscribe('status:created');
+await client.subscribe('status:completed');
+
+// Subscribe to events for a specific packet
+await client.subscribe('packet:550e8400-e29b-41d4-a716-446655440000');
+
+// Subscribe to events for a specific agent
+await client.subscribe('agent:billing-01');
+
+// Unsubscribe
+await client.unsubscribe('status:created');
+
+// Send a heartbeat ping
+await client.ping();
+```
+
+### Auto-Reconnect
+
+By default, the client automatically reconnects on disconnect with exponential backoff:
+
+- Initial delay: `reconnectDelay` (default 1000ms)
+- Each subsequent attempt multiplies the delay by `reconnectMultiplier` (default 2.0)
+- Delay is capped at `maxReconnectDelay` (default 30000ms)
+- Set `reconnect: false` to disable auto-reconnect
+
+---
+
 ## API Reference
 
 ### Client
@@ -346,6 +495,7 @@ src/
 ├── index.ts            # Package entry point — re-exports all public API
 ├── client.ts           # HandoffRailClient (sync, using Node http/https)
 ├── async-client.ts     # AsyncHandoffRailClient (using fetch)
+├── ws-client.ts        # AsyncWebSocketClient (real-time events)
 ├── models.ts           # TypeScript interfaces and serialization helpers
 ├── builders.ts         # PacketBuilder and ChainBuilder fluent builders
 ├── errors.ts           # Custom error hierarchy
@@ -354,6 +504,7 @@ src/
 tests/
 ├── client.test.ts      # Sync client tests (in-memory test server)
 ├── async-client.test.ts # Async client tests (mocked fetch)
+├── ws-client.test.ts   # WebSocket client tests (mocked WebSocket)
 ├── builders.test.ts    # Builder tests
 ├── models.test.ts      # Model/serialization tests
 ├── errors.test.ts      # Error class tests

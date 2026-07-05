@@ -9,13 +9,23 @@ from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.middleware.auth import get_api_key_from_request
 from app.models.db import ApiKey, Packet, PacketEvent
+from app.config import get_settings
 from app.models.packet import (
+    BatchClaimError,
+    BatchClaimRequest,
+    BatchClaimResponse,
+    BatchCompleteError,
+    BatchCompleteRequest,
+    BatchCompleteResponse,
+    BatchCreateError,
+    BatchCreateResponse,
+    BatchPacketCreate,
     ChainRequest,
     ClaimRequest,
     HandoffPacketCreate,
@@ -336,7 +346,356 @@ async def create_packet(
             tenant_id=api_key.tenant_id,
         )
 
-        return _packet_to_response(db_packet)
+        return _packet_to_response(db_packet)# ── Batch Create ───────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/batch",
+    response_model=BatchCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def batch_create_packets(
+    payload: BatchPacketCreate,
+    db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
+) -> BatchCreateResponse:
+    """Create multiple handoff packets in a single request.
+
+    Each packet is created in its own transaction — partial success is allowed.
+    Max batch size is controlled by the BATCH_MAX_SIZE setting (default 50).
+    """
+    settings = get_settings()
+    if len(payload.packets) > settings.batch_max_size:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Batch size exceeds maximum of {settings.batch_max_size}",
+        )
+
+    created: list[HandoffPacketResponse] = []
+    errors: list[BatchCreateError] = []
+
+    for idx, raw_payload in enumerate(payload.packets):
+        try:
+            # Validate individual packet — failures become partial errors
+            packet_payload = HandoffPacketCreate.model_validate(raw_payload)
+
+            packet_id = str(uuid4())
+            now = datetime.now(UTC)
+
+            # Determine initial status
+            initial_status = "created"
+            if packet_payload.hitl is not None and packet_payload.hitl.required:
+                initial_status = "awaiting_human"
+
+            # Build metadata dict
+            metadata_dict = packet_payload.metadata.model_dump(mode="json")
+            if metadata_dict.get("created_at") is None:
+                metadata_dict["created_at"] = now.isoformat()
+
+            # Build context dict
+            context_dict = packet_payload.context.model_dump(mode="json")
+
+            # Build decisions, actions, dependencies dicts
+            decisions_list = [d.model_dump(mode="json") for d in packet_payload.decisions]
+            actions_dict = packet_payload.actions.model_dump(mode="json")
+            dependencies_list = [d.model_dump(mode="json") for d in packet_payload.dependencies]
+            hitl_dict = packet_payload.hitl.model_dump(mode="json") if packet_payload.hitl else None
+
+            db_packet = Packet(
+                id=packet_id,
+                version="1.0.0",
+                parent_packet_id=str(packet_payload.parent_packet_id) if packet_payload.parent_packet_id else None,
+                status=initial_status,
+                tenant_id=api_key.tenant_id,
+                metadata_json=json.dumps(metadata_dict, default=str),
+                context_json=json.dumps(context_dict, default=str),
+                decisions_json=json.dumps(decisions_list, default=str),
+                actions_json=json.dumps(actions_dict, default=str),
+                dependencies_json=json.dumps(dependencies_list, default=str),
+                hitl_json=json.dumps(hitl_dict, default=str) if hitl_dict else None,
+                created_at=now,
+                updated_at=now,
+            )
+
+            db.add(db_packet)
+            await _add_event(db, packet_id, "created", f"agent:{packet_payload.metadata.source_agent.id}")
+            await db.commit()
+            await db.refresh(db_packet)
+
+            logger.info(
+                "batch_packet_created",
+                packet_id=packet_id,
+                status=initial_status,
+                batch_index=idx,
+            )
+
+            record_handoff(tenant_id=api_key.tenant_id)
+            if initial_status == "awaiting_human":
+                record_hitl_checkpoint(tenant_id=api_key.tenant_id)
+
+            created.append(_packet_to_response(db_packet))
+
+        except Exception as exc:
+            logger.warning(
+                "batch_packet_create_failed",
+                batch_index=idx,
+                error=str(exc),
+            )
+            errors.append(BatchCreateError(index=idx, error=str(exc)))
+
+    return BatchCreateResponse(created=created, errors=errors)
+
+
+# ── Batch Claim ────────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/batch/claim",
+    response_model=BatchClaimResponse,
+)
+async def batch_claim_packets(
+    payload: BatchClaimRequest,
+    db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
+) -> BatchClaimResponse:
+    """Claim multiple packets in a single request.
+
+    Each packet is claimed atomically — a packet already claimed by another
+    agent returns an error for that entry but doesn't fail the whole batch.
+    """
+    claimed: list[HandoffPacketResponse] = []
+    errors: list[BatchClaimError] = []
+
+    for packet_id in payload.packet_ids:
+        try:
+            packet = await _get_packet_or_404(packet_id, db, tenant_id=api_key.tenant_id)
+
+            # Check if packet is expired
+            if packet.status == "expired":
+                errors.append(BatchClaimError(
+                    packet_id=packet_id,
+                    error=f"Packet {packet_id} has expired",
+                ))
+                continue
+
+            # Validate status transition
+            try:
+                transition = validate_transition(packet.status, "claimed")
+            except InvalidTransitionError:
+                if packet.status == "claimed":
+                    metadata = packet.get_metadata()
+                    claimant = metadata.get("target_agent", {})
+                    errors.append(BatchClaimError(
+                        packet_id=packet_id,
+                        error=f"Already claimed by {claimant.get('id', 'unknown')}",
+                    ))
+                else:
+                    errors.append(BatchClaimError(
+                        packet_id=packet_id,
+                        error=f"Cannot claim from status '{packet.status}'",
+                    ))
+                continue
+
+            now = datetime.now(UTC)
+
+            # Update status and claimant info
+            packet.status = "claimed"
+            packet.updated_at = now
+
+            # Update metadata with claimant info and claimed_at timestamp
+            metadata = packet.get_metadata()
+            metadata["claimed_at"] = now.isoformat()
+            metadata["target_agent"] = {
+                "id": payload.agent_id,
+                "name": payload.agent_name,
+                "framework": payload.framework,
+            }
+            packet.set_metadata(metadata)
+
+            await _add_event(
+                db,
+                packet.id,
+                transition,
+                f"agent:{payload.agent_id}",
+                {"agent_name": payload.agent_name, "framework": payload.framework},
+            )
+
+            await db.commit()
+            await db.refresh(packet)
+
+            logger.info("batch_packet_claimed", packet_id=str(packet_id), agent=payload.agent_id)
+
+            claimed.append(_packet_to_response(packet))
+
+        except HTTPException as exc:
+            errors.append(BatchClaimError(
+                packet_id=packet_id,
+                error=exc.detail if isinstance(exc.detail, str) else str(exc.detail),
+            ))
+        except Exception as exc:
+            logger.warning(
+                "batch_packet_claim_failed",
+                packet_id=str(packet_id),
+                error=str(exc),
+            )
+            errors.append(BatchClaimError(packet_id=packet_id, error=str(exc)))
+
+    return BatchClaimResponse(claimed=claimed, errors=errors)
+
+
+# ── Batch Complete ─────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/batch/complete",
+    response_model=BatchCompleteResponse,
+)
+async def batch_complete_packets(
+    payload: BatchCompleteRequest,
+    db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
+) -> BatchCompleteResponse:
+    """Complete multiple packets in a single request.
+
+    Each packet is completed individually — a packet not found or in the wrong
+    status returns an error for that entry but doesn't fail the whole batch.
+    """
+    completed: list[HandoffPacketResponse] = []
+    errors: list[BatchCompleteError] = []
+
+    for packet_id in payload.packet_ids:
+        try:
+            packet = await _get_packet_or_404(packet_id, db, tenant_id=api_key.tenant_id)
+
+            # Validate status transition
+            try:
+                transition = validate_transition(packet.status, "completed")
+            except InvalidTransitionError:
+                errors.append(BatchCompleteError(
+                    packet_id=packet_id,
+                    error=f"Cannot complete from status '{packet.status}'",
+                ))
+                continue
+
+            now = datetime.now(UTC)
+
+            packet.status = "completed"
+            packet.updated_at = now
+
+            # Update metadata with completed_at timestamp
+            metadata = packet.get_metadata()
+            metadata["completed_at"] = now.isoformat()
+            packet.set_metadata(metadata)
+
+            await _add_event(
+                db,
+                packet.id,
+                transition,
+                "system:batch_complete",
+                {"from_status": packet.status},
+            )
+
+            await db.commit()
+            await db.refresh(packet)
+
+            logger.info("batch_packet_completed", packet_id=str(packet_id))
+
+            completed.append(_packet_to_response(packet))
+
+        except HTTPException as exc:
+            errors.append(BatchCompleteError(
+                packet_id=packet_id,
+                error=exc.detail if isinstance(exc.detail, str) else str(exc.detail),
+            ))
+        except Exception as exc:
+            logger.warning(
+                "batch_packet_complete_failed",
+                packet_id=str(packet_id),
+                error=str(exc),
+            )
+            errors.append(BatchCompleteError(packet_id=packet_id, error=str(exc)))
+
+    return BatchCompleteResponse(completed=completed, errors=errors)
+
+
+# ── Search ─────────────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/search",
+    response_model=PacketListResponse,
+    responses={
+        400: {"description": "Query too short or empty"},
+    },
+)
+async def search_packets(
+    q: str = Query(..., min_length=2, description="Search query string"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    status: str | None = Query(None, description="Filter by status"),
+    priority: str | None = Query(None, description="Filter by priority"),
+    db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
+) -> PacketListResponse:
+    """Full-text search across packet summaries and context.
+
+    Uses SQLite FTS5 (dev) or PostgreSQL tsvector (prod) for relevance-ranked search.
+    """
+    from app.database import is_postgres_url
+
+    # Build filter conditions
+    conditions = ["p.tenant_id = :tenant_id"]
+    params: dict = {"tenant_id": api_key.tenant_id, "q": q}
+
+    if status:
+        conditions.append("p.status = :status")
+        params["status"] = status
+    if priority:
+        conditions.append("json_extract(p.metadata_json, '$.priority') = :priority")
+        params["priority"] = priority
+
+    where_clause = " AND ".join(conditions)
+
+    if is_postgres_url():
+        sql = text(
+            "SELECT p.id, ts_rank(p.search_vector, plainto_tsquery('english', :q)) AS rank "
+            "FROM packets p WHERE p.search_vector @@ plainto_tsquery('english', :q) AND "
+            + where_clause +
+            " ORDER BY rank DESC LIMIT :limit OFFSET :offset"
+        )
+    else:
+        sql = text(
+            "SELECT packet_fts.packet_id AS id, packet_fts.rank AS rank "
+            "FROM packet_fts "
+            "JOIN packets p ON p.id = packet_fts.packet_id "
+            "WHERE packet_fts MATCH :q AND " + where_clause +
+            " ORDER BY packet_fts.rank DESC LIMIT :limit OFFSET :offset"
+        )
+
+    params["limit"] = limit
+    params["offset"] = offset
+
+    result = await db.execute(sql, params)
+    rows = result.fetchall()
+
+    # Load full Packet ORM objects for matching IDs
+    packet_ids = [str(row[0]) for row in rows]
+    if not packet_ids:
+        return PacketListResponse(packets=[], total=0, limit=limit, offset=offset)
+
+    stmt = select(Packet).where(Packet.id.in_(packet_ids))
+    result = await db.execute(stmt)
+    packet_map = {str(p.id): p for p in result.scalars().all()}
+
+    # Preserve search rank ordering
+    packets = [_packet_to_response(packet_map[pid]) for pid in packet_ids if pid in packet_map]
+
+    return PacketListResponse(
+        packets=packets,
+        total=len(packets),
+        limit=limit,
+        offset=offset,
+    )
 
 
 # ── Read ────────────────────────────────────────────────────────────────────────

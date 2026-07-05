@@ -508,3 +508,122 @@ class ChainHandoffRequest(BaseModel):
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json", exclude_none=True)
+
+
+# ── Batch Operations ───────────────────────────────────────────────────────────
+
+
+class BatchCreateError(BaseModel):
+    """Error entry for a single packet in a batch create response."""
+
+    index: int
+    error: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BatchCreateError:
+        return cls.model_validate(data)
+
+
+class BatchCreateResponse(BaseModel):
+    """Response for batch packet creation."""
+
+    created: list[PacketResponse]
+    errors: list[BatchCreateError] = Field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BatchCreateResponse:
+        return cls(
+            created=[PacketResponse.from_dict(p) for p in data.get("created", [])],
+            errors=[BatchCreateError.from_dict(e) for e in data.get("errors", [])],
+        )
+
+
+class BatchClaimRequest(BaseModel):
+    """Request body for batch packet claiming."""
+
+    packet_ids: list[str]
+    agent_id: str
+    agent_name: str
+    framework: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class BatchClaimError(BaseModel):
+    """Error entry for a single packet in a batch claim response."""
+
+    packet_id: str
+    error: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BatchClaimError:
+        return cls.model_validate(data)
+
+
+class BatchClaimResponse(BaseModel):
+    """Response for batch packet claiming."""
+
+    claimed: list[PacketResponse]
+    errors: list[BatchClaimError] = Field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BatchClaimResponse:
+        return cls(
+            claimed=[PacketResponse.from_dict(p) for p in data.get("claimed", [])],
+            errors=[BatchClaimError.from_dict(e) for e in data.get("errors", [])],
+        )
+
+
+class BatchCompleteRequest(BaseModel):
+    """Request body for batch packet completion."""
+
+    packet_ids: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class BatchCompleteError(BaseModel):
+    """Error entry for a single packet in a batch complete response."""
+
+    packet_id: str
+    error: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BatchCompleteError:
+        return cls.model_validate(data)
+
+
+class BatchCompleteResponse(BaseModel):
+    """Response for batch packet completion."""
+
+    completed: list[PacketResponse]
+    errors: list[BatchCompleteError] = Field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BatchCompleteResponse:
+        return cls(
+            completed=[PacketResponse.from_dict(p) for p in data.get("completed", [])],
+            errors=[BatchCompleteError.from_dict(e) for e in data.get("errors", [])],
+        )
+
+
+# ── Search ─────────────────────────────────────────────────────────────────────
+
+
+class SearchOptions(BaseModel):
+    """Options for packet search."""
+
+    limit: int = 50
+    offset: int = 0
+    status: str | None = None
+    priority: str | None = None
+
+    def to_params(self) -> dict[str, Any]:
+        params: dict[str, Any] = {"limit": self.limit, "offset": self.offset}
+        if self.status:
+            params["status"] = self.status
+        if self.priority:
+            params["priority"] = self.priority
+        return params

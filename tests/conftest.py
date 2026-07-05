@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk" / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import async_session, engine
+from app.database import _init_fts
 from app.main import create_app
 from app.middleware.auth import generate_api_key
 from app.middleware.rate_limit import rate_limiter_registry
@@ -64,6 +65,7 @@ async def setup_db():
     """Create tables before each test and drop them after. Also reset rate limiter."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _init_fts(conn)
 
     # Ensure the test API key exists in the fresh DB
     await _ensure_test_api_key()

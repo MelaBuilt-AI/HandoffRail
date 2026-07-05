@@ -12,6 +12,12 @@ from handoffrail.sdk.models import (
     WebhookResponse,
     PacketEvent,
     ChainHandoffRequest,
+    BatchCreateResponse,
+    BatchClaimRequest,
+    BatchClaimResponse,
+    BatchCompleteRequest,
+    BatchCompleteResponse,
+    SearchOptions,
 )
 from handoffrail.sdk.builders import PacketBuilder, ChainBuilder
 from handoffrail.sdk.exceptions import (
@@ -41,6 +47,12 @@ __all__ = [
     "WebhookResponse",
     "PacketEvent",
     "ChainHandoffRequest",
+    "BatchCreateResponse",
+    "BatchClaimRequest",
+    "BatchClaimResponse",
+    "BatchCompleteRequest",
+    "BatchCompleteResponse",
+    "SearchOptions",
     # Builders
     "PacketBuilder",
     "ChainBuilder",

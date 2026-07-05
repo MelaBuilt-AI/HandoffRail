@@ -39,6 +39,11 @@ import type {
   ClaimPacketOptions,
   HitlRespondOptions,
   RegisterWebhookOptions,
+  BatchCreateResponse,
+  BatchClaimOptions,
+  BatchClaimResponse,
+  BatchCompleteResponse,
+  SearchOptions,
 } from './models';
 
 import {
@@ -469,5 +474,56 @@ export class AsyncHandoffRailClient {
    */
   async deleteWebhook(webhookId: string): Promise<void> {
     await this._request('DELETE', `/hooks/${encodeURIComponent(webhookId)}`);
+  }
+
+  // ── Batch Operations ───────────────────────────────────────────────────
+
+  /**
+   * Create multiple packets in a single request (max 50).
+   */
+  async batchCreatePackets(packets: PacketCreate[]): Promise<BatchCreateResponse> {
+    const payload = { packets: packets.map(p => serializePacketCreate(p)) };
+    const data = await this._request('POST', '/packets/batch', { jsonData: payload });
+    return data as unknown as BatchCreateResponse;
+  }
+
+  /**
+   * Claim multiple packets in a single request.
+   */
+  async batchClaimPackets(packetIds: string[], options: BatchClaimOptions): Promise<BatchClaimResponse> {
+    const payload = {
+      packet_ids: packetIds,
+      agent_id: options.agentId,
+      agent_name: options.agentName,
+      ...(options.framework && { framework: options.framework }),
+    };
+    const data = await this._request('POST', '/packets/batch/claim', { jsonData: payload });
+    return data as unknown as BatchClaimResponse;
+  }
+
+  /**
+   * Complete multiple packets in a single request.
+   */
+  async batchCompletePackets(packetIds: string[]): Promise<BatchCompleteResponse> {
+    const payload = { packet_ids: packetIds };
+    const data = await this._request('POST', '/packets/batch/complete', { jsonData: payload });
+    return data as unknown as BatchCompleteResponse;
+  }
+
+  // ── Search ─────────────────────────────────────────────────────────────
+
+  /**
+   * Full-text search across packet summaries and context.
+   */
+  async searchPackets(query: string, options?: SearchOptions): Promise<PacketListResponse> {
+    const params: Record<string, string | number | undefined> = { q: query };
+    if (options) {
+      if (options.limit !== undefined) params.limit = options.limit;
+      if (options.offset !== undefined) params.offset = options.offset;
+      if (options.status) params.status = options.status;
+      if (options.priority) params.priority = options.priority;
+    }
+    const data = await this._request('GET', '/packets/search', { params });
+    return data as unknown as PacketListResponse;
   }
 }

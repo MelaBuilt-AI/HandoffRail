@@ -34,6 +34,11 @@ from handoffrail.sdk.exceptions import (
     ValidationError,
 )
 from handoffrail.sdk.models import (
+    BatchClaimRequest,
+    BatchClaimResponse,
+    BatchCompleteRequest,
+    BatchCompleteResponse,
+    BatchCreateResponse,
     ChainHandoffRequest,
     HitlRespondRequest,
     PacketClaim,
@@ -42,6 +47,7 @@ from handoffrail.sdk.models import (
     PacketListResponse,
     PacketResponse,
     PacketUpdate,
+    SearchOptions,
     WebhookCreate,
     WebhookResponse,
 )
@@ -446,3 +452,76 @@ class HandoffRailClient:
             webhook_id: The webhook UUID.
         """
         self._request("DELETE", f"/hooks/{webhook_id}")
+
+    # ── Batch Operations ───────────────────────────────────────────────────────
+
+    def batch_create_packets(self, packets: list[PacketCreate]) -> BatchCreateResponse:
+        """Create multiple packets in a single request.
+
+        Args:
+            packets: List of packet create payloads (max 50).
+
+        Returns:
+            Response with created packets and any errors.
+        """
+        payload = {"packets": [p.to_dict() for p in packets]}
+        data = self._request("POST", "/packets/batch", json_data=payload)
+        return BatchCreateResponse.from_dict(data)
+
+    def batch_claim_packets(
+        self,
+        packet_ids: list[str],
+        agent_id: str,
+        agent_name: str,
+        framework: str | None = None,
+    ) -> BatchClaimResponse:
+        """Claim multiple packets in a single request.
+
+        Args:
+            packet_ids: List of packet UUIDs to claim.
+            agent_id: The claiming agent's ID.
+            agent_name: The claiming agent's name.
+            framework: Optional agent framework identifier.
+
+        Returns:
+            Response with claimed packets and any errors.
+        """
+        payload = BatchClaimRequest(
+            packet_ids=packet_ids,
+            agent_id=agent_id,
+            agent_name=agent_name,
+            framework=framework,
+        )
+        data = self._request("POST", "/packets/batch/claim", json_data=payload.to_dict())
+        return BatchClaimResponse.from_dict(data)
+
+    def batch_complete_packets(self, packet_ids: list[str]) -> BatchCompleteResponse:
+        """Complete multiple packets in a single request.
+
+        Args:
+            packet_ids: List of packet UUIDs to complete.
+
+        Returns:
+            Response with completed packets and any errors.
+        """
+        payload = BatchCompleteRequest(packet_ids=packet_ids)
+        data = self._request("POST", "/packets/batch/complete", json_data=payload.to_dict())
+        return BatchCompleteResponse.from_dict(data)
+
+    # ── Search ─────────────────────────────────────────────────────────────────
+
+    def search_packets(self, query: str, options: SearchOptions | None = None) -> PacketListResponse:
+        """Full-text search across packet summaries and context.
+
+        Args:
+            query: Search query string (min 2 characters).
+            options: Optional filters (limit, offset, status, priority).
+
+        Returns:
+            List response with matching packets ranked by relevance.
+        """
+        params: dict[str, Any] = {"q": query}
+        if options:
+            params.update(options.to_params())
+        data = self._request("GET", "/packets/search", params=params)
+        return PacketListResponse.from_dict(data)

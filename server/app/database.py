@@ -95,9 +95,79 @@ async def init_db() -> None:
 
     In production with PostgreSQL, Alembic migrations should be used instead.
     This is safe to call regardless — create_all is idempotent.
+    Also sets up full-text search indexes (FTS5 for SQLite, tsvector for PostgreSQL).
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _init_fts(conn)
+
+
+async def _init_fts(conn) -> None:
+    """Initialize full-text search tables/indexes.
+
+    SQLite: creates an FTS5 virtual table with triggers to keep it in sync.
+    PostgreSQL: creates a tsvector generated column with a GIN index.
+    """
+    if is_postgres_url():
+        # PostgreSQL tsvector + GIN index
+        await conn.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'packets' AND column_name = 'search_vector'
+                ) THEN
+                    ALTER TABLE packets ADD COLUMN search_vector tsvector
+                    GENERATED ALWAYS AS (
+                        to_tsvector('english',
+                            coalesce(context_json::jsonb->>'summary', '') || ' ' ||
+                            coalesce(context_json, '')
+                        )
+                    ) STORED;
+                END IF;
+            END $$;
+        """))
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_packets_search
+            ON packets USING GIN(search_vector);
+        """))
+    else:
+        # SQLite FTS5 virtual table
+        await conn.execute(text("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS packet_fts USING fts5(
+                packet_id UNINDEXED,
+                summary,
+                tenant_id UNINDEXED,
+                tokenize='porter unicode61'
+            );
+        """))
+        # Triggers to keep FTS table in sync
+        await conn.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS packet_fts_ai AFTER INSERT ON packets BEGIN
+                INSERT INTO packet_fts(packet_id, summary, tenant_id)
+                VALUES (
+                    new.id,
+                    coalesce(json_extract(new.context_json, '$.summary'), ''),
+                    new.tenant_id
+                );
+            END;
+        """))
+        await conn.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS packet_fts_ad AFTER DELETE ON packets BEGIN
+                DELETE FROM packet_fts WHERE packet_id = old.id;
+            END;
+        """))
+        await conn.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS packet_fts_au AFTER UPDATE ON packets BEGIN
+                DELETE FROM packet_fts WHERE packet_id = old.id;
+                INSERT INTO packet_fts(packet_id, summary, tenant_id)
+                VALUES (
+                    new.id,
+                    coalesce(json_extract(new.context_json, '$.summary'), ''),
+                    new.tenant_id
+                );
+            END;
+        """))
 
 
 async def check_db_connection() -> bool:

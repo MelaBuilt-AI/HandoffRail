@@ -62,10 +62,14 @@
     "ai": "^3.0.0"
   },
   "peerDependencies": {
-    "ai": "^3.0.0 || ^4.0.0"
+    "ai": "^3.0.0 || ^4.0.0",
+    "ws": "^8.0.0"
   },
   "peerDependenciesMeta": {
     "ai": {
+      "optional": true
+    },
+    "ws": {
       "optional": true
     }
   },
@@ -73,11 +77,13 @@
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
     "@types/uuid": "^9.0.0",
+    "@types/ws": "^8.5.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "eslint": "^8.57.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.1.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "ws": "^8.18.0"
   }
 }

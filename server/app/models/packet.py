@@ -404,3 +404,74 @@ class ErrorResponse(BaseModel):
 
     detail: str
     field: str | None = None
+
+
+# ── Batch Operation Models ────────────────────────────────────────────────────
+
+
+class BatchPacketCreate(BaseModel):
+    """Request body for batch packet creation.
+
+    Accepts raw dicts so individual packet validation failures
+    can be reported as partial errors instead of failing the
+    entire request with a 422.
+    """
+
+    packets: list[dict[str, Any]] = Field(..., min_length=1)
+
+
+class BatchCreateError(BaseModel):
+    """Error entry for a single packet in a batch create response."""
+
+    index: int
+    error: str
+
+
+class BatchCreateResponse(BaseModel):
+    """Response for batch packet creation."""
+
+    created: list[HandoffPacketResponse]
+    errors: list[BatchCreateError] = Field(default_factory=list)
+
+
+class BatchClaimRequest(BaseModel):
+    """Request body for batch packet claiming."""
+
+    packet_ids: list[UUID] = Field(..., min_length=1, max_length=50)
+    agent_id: str
+    agent_name: str
+    framework: str | None = None
+
+
+class BatchClaimError(BaseModel):
+    """Error entry for a single packet in a batch claim response."""
+
+    packet_id: UUID
+    error: str
+
+
+class BatchClaimResponse(BaseModel):
+    """Response for batch packet claiming."""
+
+    claimed: list[HandoffPacketResponse]
+    errors: list[BatchClaimError] = Field(default_factory=list)
+
+
+class BatchCompleteRequest(BaseModel):
+    """Request body for batch packet completion."""
+
+    packet_ids: list[UUID] = Field(..., min_length=1, max_length=50)
+
+
+class BatchCompleteError(BaseModel):
+    """Error entry for a single packet in a batch complete response."""
+
+    packet_id: UUID
+    error: str
+
+
+class BatchCompleteResponse(BaseModel):
+    """Response for batch packet completion."""
+
+    completed: list[HandoffPacketResponse]
+    errors: list[BatchCompleteError] = Field(default_factory=list)

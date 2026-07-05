@@ -383,3 +383,74 @@ export function serializeChainHandoffRequest(r: ChainHandoffRequest): Record<str
     hitl: r.hitl,
   });
 }
+
+// ── Batch Operations ───────────────────────────────────────────────────────────
+
+/**
+ * Error entry for a single packet in a batch create response.
+ */
+export interface BatchCreateError {
+  index: number;
+  error: string;
+}
+
+/**
+ * Response for batch packet creation.
+ */
+export interface BatchCreateResponse {
+  created: PacketResponse[];
+  errors: BatchCreateError[];
+}
+
+/**
+ * Options for batch claiming packets.
+ */
+export interface BatchClaimOptions {
+  agentId: string;
+  agentName: string;
+  framework?: string;
+}
+
+/**
+ * Error entry for a single packet in a batch claim response.
+ */
+export interface BatchClaimError {
+  packet_id: string;
+  error: string;
+}
+
+/**
+ * Response for batch packet claiming.
+ */
+export interface BatchClaimResponse {
+  claimed: PacketResponse[];
+  errors: BatchClaimError[];
+}
+
+/**
+ * Error entry for a single packet in a batch complete response.
+ */
+export interface BatchCompleteError {
+  packet_id: string;
+  error: string;
+}
+
+/**
+ * Response for batch packet completion.
+ */
+export interface BatchCompleteResponse {
+  completed: PacketResponse[];
+  errors: BatchCompleteError[];
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Options for packet search.
+ */
+export interface SearchOptions {
+  limit?: number;
+  offset?: number;
+  status?: string;
+  priority?: string;
+}

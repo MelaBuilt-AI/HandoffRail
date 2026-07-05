@@ -14,6 +14,38 @@ export type { HandoffRailClientOptions } from './client';
 export { AsyncHandoffRailClient } from './async-client';
 export type { AsyncHandoffRailClientOptions } from './async-client';
 
+// ── WebSocket Client ───────────────────────────────────────────────────
+
+export {
+  AsyncWebSocketClient,
+  EVENT_PACKET_CREATED,
+  EVENT_PACKET_CLAIMED,
+  EVENT_PACKET_UPDATED,
+  EVENT_PACKET_IN_PROGRESS,
+  EVENT_PACKET_AWAITING_HUMAN,
+  EVENT_PACKET_COMPLETED,
+  EVENT_PACKET_FAILED,
+  EVENT_PACKET_EXPIRED,
+  EVENT_PACKET_CHAINED,
+  EVENT_HITL_RESPONSE_READY,
+  ALL_EVENTS,
+  WS_CONNECTING,
+  WS_OPEN,
+  WS_CLOSING,
+  WS_CLOSED,
+} from './ws-client';
+
+export type {
+  HandoffRailEvent,
+  EventCallback,
+  ConnectedCallback,
+  DisconnectedCallback,
+  ErrorCallback,
+  WebSocketLike,
+  WebSocketFactory,
+  AsyncWebSocketClientOptions,
+} from './ws-client';
+
 // ── Builders ─────────────────────────────────────────────────────────────
 
 export { PacketBuilder, ChainBuilder } from './builders';
@@ -58,6 +90,15 @@ export type {
   ClaimPacketOptions,
   HitlRespondOptions,
   RegisterWebhookOptions,
+  // Batch
+  BatchCreateError,
+  BatchCreateResponse,
+  BatchClaimOptions,
+  BatchClaimError,
+  BatchClaimResponse,
+  BatchCompleteError,
+  BatchCompleteResponse,
+  SearchOptions,
 } from './models';
 
 export {
