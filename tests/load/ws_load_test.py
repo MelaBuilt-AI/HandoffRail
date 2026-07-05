@@ -15,14 +15,13 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
-import time
 import statistics
 import sys
-import argparse
+import time
 from dataclasses import dataclass, field
-from typing import Any
 from urllib.parse import urlencode
 
 import aiohttp
@@ -84,7 +83,9 @@ class LoadTestResult:
     latency_stats: dict[str, float] | None = None
 
 
-async def _create_test_packets(session: aiohttp.ClientSession, api_key: str, base_url: str, count: int = 10) -> list[str]:
+async def _create_test_packets(
+    session: aiohttp.ClientSession, api_key: str, base_url: str, count: int = 10,
+) -> list[str]:
     """Create test packets via REST API so WS has events to receive."""
     created_ids = []
     for i in range(count):
@@ -174,7 +175,7 @@ async def _monitor_connection(
                     metrics.latencies.append(event_latency)
                     last_event_time = now
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # No message within heartbeat wait — connection may be stuck
                     metrics.errors += 1
                     break
@@ -334,7 +335,7 @@ def _print_result(result: LoadTestResult) -> None:
 
     if result.connect_times:
         sorted_ct = sorted(result.connect_times)
-        print(f"\n  Connection Time:")
+        print("\n  Connection Time:")
         print(f"    Min:    {min(result.connect_times):.3f}s")
         print(f"    P50:    {statistics.median(result.connect_times):.3f}s")
         print(f"    P95:    {sorted_ct[int(len(sorted_ct) * 0.95)]:.3f}s")
@@ -343,7 +344,7 @@ def _print_result(result: LoadTestResult) -> None:
 
     if result.latency_stats:
         ls = result.latency_stats
-        print(f"\n  Event Latency (inter-event):")
+        print("\n  Event Latency (inter-event):")
         print(f"    Samples: {ls['samples']}")
         print(f"    Min:     {ls['min']:.4f}s")
         print(f"    P50:     {ls['p50']:.4f}s")
@@ -367,7 +368,7 @@ async def main():
     parser.add_argument("--levels", type=int, nargs="+", default=CONCURRENT_LEVELS, help="Concurrency levels")
     args = parser.parse_args()
 
-    print(f"🧪 HandoffRail WebSocket Load Test")
+    print("🧪 HandoffRail WebSocket Load Test")
     print(f"   Server: ws://{args.host}:{args.port}/ws")
     print(f"   Duration per level: {args.duration}s")
     print(f"   Concurrency levels: {args.levels}")
@@ -375,7 +376,7 @@ async def main():
 
     all_results: list[LoadTestResult] = []
     for level in args.levels:
-        print(f"─" * 60)
+        print("─" * 60)
         print(f"  Testing {level} concurrent connections...")
         result = await run_load_test(
             host=args.host,
@@ -394,14 +395,19 @@ async def main():
 
     # Summary
     print(f"\n{'#'*60}")
-    print(f"  SUMMARY")
+    print("  SUMMARY")
     print(f"{'#'*60}")
     print(f"  {'Concurrent':>10} | {'Success':>8} | {'Failed':>6} | {'Evt/s':>8} | {'Stability':>9} | {'P50 Lat':>8}")
     print(f"  {'-'*10}-+-{'-'*8}-+-{'-'*6}-+-{'-'*8}-+-{'-'*9}-+-{'-'*8}")
     for r in all_results:
         stability = (r.successful_connections - r.dropped_connections) / max(r.concurrent_count, 1) * 100
         p50 = f"{r.latency_stats['p50']:.3f}s" if r.latency_stats else "N/A"
-        print(f"  {r.concurrent_count:>10} | {r.successful_connections:>8} | {r.failed_connections:>6} | {r.events_per_second:>8.1f} | {stability:>8.1f}% | {p50:>8}")
+        row = (
+            f"  {r.concurrent_count:>10} | {r.successful_connections:>8}"
+            f" | {r.failed_connections:>6} | {r.events_per_second:>8.1f}"
+            f" | {stability:>8.1f}% | {p50:>8}"
+        )
+        print(row)
     print(f"{'#'*60}")
 
 

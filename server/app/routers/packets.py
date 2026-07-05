@@ -12,10 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.database import get_db
 from app.middleware.auth import get_api_key_from_request
 from app.models.db import ApiKey, Packet, PacketEvent
-from app.config import get_settings
 from app.models.packet import (
     BatchClaimError,
     BatchClaimRequest,
@@ -346,7 +346,9 @@ async def create_packet(
             tenant_id=api_key.tenant_id,
         )
 
-        return _packet_to_response(db_packet)# ── Batch Create ───────────────────────────────────────────────────────────────
+        return _packet_to_response(db_packet)
+
+# ── Batch Create ───────────────────────────────────────────────────────────────
 
 
 @router.post(

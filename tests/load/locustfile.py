@@ -18,7 +18,6 @@ from typing import Any
 
 from locust import FastHttpUser, between, task
 
-
 # ── Test data templates ────────────────────────────────────────────────────────
 
 SAMPLE_PACKET: dict[str, Any] = {

@@ -16,17 +16,14 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
-import json
 import statistics
 import time
-import sys
-import argparse
 from dataclasses import dataclass, field
 from typing import Any
 
 import aiohttp
-
 
 # ── Test configuration ─────────────────────────────────────────────────────────
 
@@ -103,7 +100,9 @@ SAMPLE_PACKET = {
 }
 
 
-async def _warmup(session: aiohttp.ClientSession, base_url: str, api_key: str, endpoints: list[tuple[str, str]]) -> None:
+async def _warmup(
+    session: aiohttp.ClientSession, base_url: str, api_key: str, endpoints: list[tuple[str, str]],
+) -> None:
     """Send warmup requests to avoid cold-start skew."""
     for method, path in endpoints:
         for _ in range(WARMUP_REQUESTS):
@@ -263,7 +262,7 @@ async def run_benchmark(
 def _print_benchmark(result: BenchmarkResult) -> None:
     """Pretty-print benchmark results."""
     print(f"\n{'#'*70}")
-    print(f"  HandoffRail REST API Benchmark")
+    print("  HandoffRail REST API Benchmark")
     print(f"  Target: {result.target}")
     print(f"  Total Duration: {result.total_duration:.1f}s")
     print(f"{'#'*70}")
@@ -281,7 +280,12 @@ def _print_benchmark(result: BenchmarkResult) -> None:
         print(f"\n{'─'*70}")
         print(f"  {endpoint_key}")
         print(f"{'─'*70}")
-        print(f"  {'Concurr':>8} | {'RPS':>10} | {'Err%':>8} | {'P50':>8} | {'P95':>8} | {'P99':>8} | {'Mean':>8} | {'Samples':>8}")
+        headers = (
+            f"  {'Concurr':>8} | {'RPS':>10} | {'Err%':>8}"
+            f" | {'P50':>8} | {'P95':>8} | {'P99':>8}"
+            f" | {'Mean':>8} | {'Samples':>8}"
+        )
+        print(headers)
         print(f"  {'-'*8}-+-{'-'*10}-+-{'-'*8}-+-{'-'*8}-+-{'-'*8}-+-{'-'*8}-+-{'-'*8}-+-{'-'*8}")
 
         for m in metrics_list:
@@ -292,7 +296,7 @@ def _print_benchmark(result: BenchmarkResult) -> None:
 
     # Summary
     print(f"\n{'─'*70}")
-    print(f"  SUMMARY")
+    print("  SUMMARY")
     print(f"{'─'*70}")
     all_rps = [r.requests_per_second for r in result.results]
     if all_rps:
@@ -313,7 +317,7 @@ async def main():
     parser.add_argument("--duration", type=float, default=DEFAULT_DURATION, help="Test duration per round (seconds)")
     args = parser.parse_args()
 
-    print(f"🧪 HandoffRail REST API Benchmark")
+    print("🧪 HandoffRail REST API Benchmark")
     print(f"   Target: http://{args.host}:{args.port}")
     print(f"   Concurrency levels: {args.concurrency}")
     print(f"   Duration per round: {args.duration}s")
