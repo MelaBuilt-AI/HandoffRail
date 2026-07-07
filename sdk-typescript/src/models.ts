@@ -207,6 +207,7 @@ export interface PacketListResponse {
   total: number;
   limit: number;
   offset: number;
+  next_cursor?: string;
 }
 
 /** Request body for claiming a packet. */
@@ -240,6 +241,25 @@ export interface PacketEvent {
 export interface PacketHistoryResponse {
   packet_id: string;
   events: PacketEvent[];
+}
+
+/** Structured audit log entry. */
+export interface AuditLogEntry {
+  id: string;
+  packet_id: string;
+  actor: string;
+  action: string;
+  resource: string;
+  details?: Record<string, unknown>;
+  timestamp: string;
+}
+
+/** Paginated structured audit log response. */
+export interface AuditLogResponse {
+  entries: AuditLogEntry[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 /** Request body for responding to a HITL checkpoint. */
@@ -289,6 +309,34 @@ export interface ListPacketsOptions {
   created_before?: string;
   limit?: number;
   offset?: number;
+  cursor?: string;
+}
+
+/** Options for listing audit log entries. */
+export interface ListAuditOptions {
+  actor?: string;
+  action?: string;
+  packet_id?: string;
+  created_after?: string;
+  created_before?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** Webhook delivery history entry. */
+export interface WebhookDelivery {
+  id: string;
+  webhook_id: string;
+  packet_id: string;
+  event_type: string;
+  status: string;
+  attempts: number;
+  last_error?: string | null;
+  last_status_code?: number | null;
+  next_retry_at?: string | null;
+  delivered_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 /** Options for claiming a packet. */

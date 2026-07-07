@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -44,6 +45,52 @@ from app.services.tracing import trace_packet_operation
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1/packets", tags=["packets"])
+
+
+def _encode_cursor(packet: Packet) -> str:
+    """Encode a stable created_at/id cursor for descending packet scans."""
+    payload = json.dumps({"created_at": packet.created_at.isoformat(), "id": packet.id})
+    return urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[datetime, str]:
+    """Decode a packet list cursor or raise 400 for malformed values."""
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        data = json.loads(urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        created_at = datetime.fromisoformat(data["created_at"])
+        return created_at, str(data["id"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid cursor",
+        ) from exc
+
+
+def _packet_matches_json_filters(
+    packet: Packet,
+    *,
+    source_agent: str | None,
+    target_agent: str | None,
+    tags: str | None,
+    priority: str | None,
+) -> bool:
+    """Apply filters stored inside the packet metadata JSON blob."""
+    metadata = packet.get_metadata()
+
+    if source_agent and metadata.get("source_agent", {}).get("id") != source_agent:
+        return False
+    if target_agent and metadata.get("target_agent", {}).get("id") != target_agent:
+        return False
+    if tags:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+        packet_tags = metadata.get("tags", [])
+        if not all(t in packet_tags for t in tag_list):
+            return False
+    if priority and metadata.get("priority") != priority:
+        return False
+
+    return True
 
 
 def _packet_to_response(packet: Packet) -> HandoffPacketResponse:
@@ -118,6 +165,7 @@ async def list_packets(
     created_before: datetime | None = Query(None, description="ISO 8601 — packets created before this time"),
     limit: int = Query(50, ge=1, le=200, description="Max results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    cursor: str | None = Query(None, description="Opaque cursor from next_cursor for large-result pagination"),
     db: AsyncSession = Depends(get_db),
     api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> PacketListResponse:
@@ -149,74 +197,64 @@ async def list_packets(
     if created_before:
         query = query.where(Packet.created_at <= created_before)
 
-    # Count total matching
-    count_query = select(func.count()).select_from(query.subquery())
-    count_result = await db.execute(count_query)
-    total = count_result.scalar() or 0
+    if cursor:
+        cursor_created_at, cursor_id = _decode_cursor(cursor)
+        query = query.where(
+            or_(
+                Packet.created_at < cursor_created_at,
+                (Packet.created_at == cursor_created_at) & (Packet.id < cursor_id),
+            )
+        )
 
-    # Apply pagination
-    query = query.order_by(Packet.created_at.desc()).offset(offset).limit(limit)
+    # Cursor pagination is ordered by created_at + id for stable pages.
+    query = query.order_by(Packet.created_at.desc(), Packet.id.desc())
+    has_json_filters = any((source_agent, target_agent, tags, priority))
+
+    if not has_json_filters:
+        count_query = select(func.count()).select_from(query.subquery())
+        count_result = await db.execute(count_query)
+        total = count_result.scalar() or 0
+
+        page_offset = 0 if cursor else offset
+        result = await db.execute(query.offset(page_offset).limit(limit + 1))
+        page_plus_one = list(result.scalars().all())
+        page = page_plus_one[:limit]
+        next_cursor = _encode_cursor(page[-1]) if len(page_plus_one) > limit and page else None
+
+        return PacketListResponse(
+            packets=[_packet_to_response(p) for p in page],
+            total=total,
+            limit=limit,
+            offset=offset,
+            next_cursor=next_cursor,
+        )
+
     result = await db.execute(query)
-    packets = result.scalars().all()
+    all_matching_db_packets = list(result.scalars().all())
 
-    # Post-fetch filtering for JSON-embedded fields
-    filtered = []
-    for p in packets:
-        metadata = p.get_metadata()
+    filtered = [
+        p
+        for p in all_matching_db_packets
+        if _packet_matches_json_filters(
+            p,
+            source_agent=source_agent,
+            target_agent=target_agent,
+            tags=tags,
+            priority=priority,
+        )
+    ]
 
-        # Source agent filter
-        if source_agent:
-            src = metadata.get("source_agent", {})
-            if src.get("id") != source_agent:
-                continue
-
-        # Target agent filter
-        if target_agent:
-            tgt = metadata.get("target_agent", {})
-            if tgt.get("id") != target_agent:
-                continue
-
-        # Tags filter (all must match)
-        if tags:
-            tag_list = [t.strip() for t in tags.split(",")]
-            packet_tags = metadata.get("tags", [])
-            if not all(t in packet_tags for t in tag_list):
-                continue
-
-        # Priority filter
-        if priority:
-            if metadata.get("priority") != priority:
-                continue
-
-        filtered.append(p)
-
-    # Recalculate total if we did post-fetch filtering
-    if source_agent or target_agent or tags or priority:
-        # Need full count for accuracy
-        full_result = await db.execute(select(Packet).where(Packet.tenant_id == api_key.tenant_id))
-        all_packets = full_result.scalars().all()
-        total_filtered = 0
-        for p in all_packets:
-            metadata = p.get_metadata()
-            if source_agent and metadata.get("source_agent", {}).get("id") != source_agent:
-                continue
-            if target_agent and metadata.get("target_agent", {}).get("id") != target_agent:
-                continue
-            if tags:
-                tag_list = [t.strip() for t in tags.split(",")]
-                packet_tags = metadata.get("tags", [])
-                if not all(t in packet_tags for t in tag_list):
-                    continue
-            if priority and metadata.get("priority") != priority:
-                continue
-            total_filtered += 1
-        total = total_filtered
+    total = len(filtered)
+    start = 0 if cursor else offset
+    page = filtered[start:start + limit]
+    next_cursor = _encode_cursor(page[-1]) if start + limit < total and page else None
 
     return PacketListResponse(
-        packets=[_packet_to_response(p) for p in filtered],
+        packets=[_packet_to_response(p) for p in page],
         total=total,
         limit=limit,
         offset=offset,
+        next_cursor=next_cursor,
     )
 
 

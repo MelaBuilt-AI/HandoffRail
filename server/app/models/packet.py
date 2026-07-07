@@ -256,6 +256,7 @@ class PacketListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+    next_cursor: str | None = None
 
 
 class ClaimRequest(BaseModel):
@@ -377,6 +378,27 @@ class PacketHistoryResponse(BaseModel):
 
     packet_id: str
     events: list[PacketEventResponse]
+
+
+class AuditLogEntry(BaseModel):
+    """Structured audit log entry."""
+
+    id: str
+    packet_id: str
+    actor: str
+    action: str
+    resource: str = "packet"
+    details: dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime
+
+
+class AuditLogResponse(BaseModel):
+    """Paginated structured audit log response."""
+
+    entries: list[AuditLogEntry]
+    total: int
+    limit: int
+    offset: int
 
 
 class ChainRequest(BaseModel):

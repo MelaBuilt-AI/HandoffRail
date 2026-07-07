@@ -183,6 +183,44 @@ class TestWebhookDeliveryTracking:
             assert deliveries[0].event_type == "packet.created"
             assert deliveries[0].webhook_id == webhook_id
 
+    async def test_webhook_deliveries_endpoint_lists_history(self, client: AsyncClient):
+        """GET /hooks/{id}/deliveries returns tenant-scoped delivery history."""
+        from app.database import async_session
+        from app.models.db import WebhookDelivery
+
+        resp = await client.post(
+            "/api/v1/hooks",
+            json={
+                "url": "https://example.com/webhook",
+                "events": ["packet.created"],
+                "secret": "a" * 16,
+            },
+        )
+        assert resp.status_code == 201
+        webhook_id = resp.json()["id"]
+
+        delivery = WebhookDelivery(
+            id=str(uuid4()),
+            webhook_id=webhook_id,
+            tenant_id="default",
+            packet_id=str(uuid4()),
+            event_type="packet.created",
+            payload_json=json.dumps({"event": "packet.created"}),
+            status="failed",
+            attempts=1,
+            last_error="timeout",
+        )
+        async with async_session() as session:
+            session.add(delivery)
+            await session.commit()
+
+        resp = await client.get(f"/api/v1/hooks/{webhook_id}/deliveries")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["id"] == delivery.id
+        assert data[0]["status"] == "failed"
+
 
 # ── Prometheus Metrics Tests ───────────────────────────────────────────────────
 

@@ -1,33 +1,34 @@
 """HandoffRail Python SDK — session-continuity middleware for multi-agent AI workflows."""
 
-from handoffrail.sdk.client import HandoffRailClient
 from handoffrail.sdk.async_client import AsyncHandoffRailClient
+from handoffrail.sdk.builders import ChainBuilder, PacketBuilder
+from handoffrail.sdk.client import HandoffRailClient
+from handoffrail.sdk.exceptions import (
+    AuthenticationError,
+    ConnectionError,
+    HandoffRailError,
+    NotFoundError,
+    RateLimitError,
+    ServerError,
+    ValidationError,
+)
 from handoffrail.sdk.models import (
-    PacketCreate,
-    PacketResponse,
-    PacketListResponse,
-    PacketClaim,
-    PacketUpdate,
-    WebhookCreate,
-    WebhookResponse,
-    PacketEvent,
-    ChainHandoffRequest,
-    BatchCreateResponse,
+    AuditLogResponse,
     BatchClaimRequest,
     BatchClaimResponse,
     BatchCompleteRequest,
     BatchCompleteResponse,
+    BatchCreateResponse,
+    ChainHandoffRequest,
+    PacketClaim,
+    PacketCreate,
+    PacketEvent,
+    PacketListResponse,
+    PacketResponse,
+    PacketUpdate,
     SearchOptions,
-)
-from handoffrail.sdk.builders import PacketBuilder, ChainBuilder
-from handoffrail.sdk.exceptions import (
-    HandoffRailError,
-    AuthenticationError,
-    NotFoundError,
-    ValidationError,
-    RateLimitError,
-    ServerError,
-    ConnectionError,
+    WebhookCreate,
+    WebhookResponse,
 )
 
 # WebSocket client — lazy import, requires websockets package
@@ -41,6 +42,7 @@ __all__ = [
     "PacketCreate",
     "PacketResponse",
     "PacketListResponse",
+    "AuditLogResponse",
     "PacketClaim",
     "PacketUpdate",
     "WebhookCreate",
@@ -68,7 +70,7 @@ __all__ = [
     "HandoffRailWSClient",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def __getattr__(name: str):

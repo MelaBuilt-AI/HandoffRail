@@ -8,25 +8,24 @@ plain data-transfer objects.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
 
-class Priority(str, Enum):
+class Priority(StrEnum):
     low = "low"
     normal = "normal"
     high = "high"
     critical = "critical"
 
 
-class PacketStatus(str, Enum):
+class PacketStatus(StrEnum):
     created = "created"
     claimed = "claimed"
     in_progress = "in_progress"
@@ -36,14 +35,14 @@ class PacketStatus(str, Enum):
     expired = "expired"
 
 
-class ConversationRole(str, Enum):
+class ConversationRole(StrEnum):
     user = "user"
     agent = "agent"
     system = "system"
     human = "human"
 
 
-class DependencyType(str, Enum):
+class DependencyType(StrEnum):
     data = "data"
     api = "api"
     human_approval = "human_approval"
@@ -51,7 +50,7 @@ class DependencyType(str, Enum):
     resource = "resource"
 
 
-class DependencyStatus(str, Enum):
+class DependencyStatus(StrEnum):
     blocked = "blocked"
     available = "available"
     unknown = "unknown"
@@ -249,7 +248,7 @@ class Metadata(BaseModel):
 
     source_agent: AgentInfo
     target_agent: TargetAgentInfo
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     claimed_at: datetime | None = None
     completed_at: datetime | None = None
     priority: Priority = Priority.normal
@@ -340,6 +339,7 @@ class PacketListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+    next_cursor: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PacketListResponse:
@@ -471,6 +471,34 @@ class PacketHistoryResponse(BaseModel):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PacketHistoryResponse:
+        return cls.model_validate(data)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", exclude_none=True)
+
+
+class AuditLogEntry(BaseModel):
+    """Structured audit log entry."""
+
+    id: str
+    packet_id: str
+    actor: str
+    action: str
+    resource: str = "packet"
+    details: dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime
+
+
+class AuditLogResponse(BaseModel):
+    """Paginated structured audit log response."""
+
+    entries: list[AuditLogEntry]
+    total: int
+    limit: int
+    offset: int
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AuditLogResponse:
         return cls.model_validate(data)
 
     def to_dict(self) -> dict[str, Any]:

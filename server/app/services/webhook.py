@@ -8,11 +8,10 @@ queue for permanently failed deliveries.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -25,10 +24,8 @@ from app.models.db import Packet, Webhook, WebhookDelivery
 logger = structlog.get_logger()
 
 # Retry configuration
-MAX_RETRIES = 5
-INITIAL_BACKOFF_SECONDS = 1.0
-BACKOFF_MULTIPLIER = 2.0
-MAX_BACKOFF_SECONDS = 60.0
+MAX_RETRIES = 6
+BACKOFF_SCHEDULE_SECONDS = [1, 5, 30, 300, 3600, 21600]
 DLQ_THRESHOLD = MAX_RETRIES  # After this many attempts → dead letter
 
 # Valid webhook event types mapped to status transitions
@@ -170,6 +167,16 @@ async def _update_delivery_record(
         await session.commit()
 
 
+async def _get_delivery_attempts(delivery_id: str) -> int:
+    """Read current attempts for a delivery record."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(WebhookDelivery.attempts).where(WebhookDelivery.id == delivery_id)
+        )
+        attempts = result.scalar_one_or_none()
+        return attempts or 0
+
+
 async def deliver_webhook(
     webhook: Webhook,
     payload: dict[str, Any],
@@ -177,9 +184,9 @@ async def deliver_webhook(
 ) -> bool:
     """Deliver a webhook payload to the registered URL with HMAC signing.
 
-    Uses httpx for async HTTP delivery. Retries up to MAX_RETRIES times
-    with exponential backoff on failure. Tracks delivery in WebhookDelivery
-    table when delivery_id is provided.
+    Uses httpx for async HTTP delivery. One attempt is made per call; failed
+    deliveries are scheduled for retry with exponential backoff and moved to
+    the dead letter queue after MAX_RETRIES attempts.
 
     Args:
         webhook: The Webhook ORM object.
@@ -201,78 +208,81 @@ async def deliver_webhook(
         "X-HR-Delivery-ID": delivery_id or str(uuid4()),
     }
 
-    backoff = INITIAL_BACKOFF_SECONDS
+    previous_attempts = await _get_delivery_attempts(delivery_id) if delivery_id else 0
+    attempt = previous_attempts + 1
     last_error = None
     last_status_code = None
 
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    webhook.url,
-                    content=payload_json,
-                    headers=headers,
-                )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                webhook.url,
+                content=payload_json,
+                headers=headers,
+            )
 
-                last_status_code = response.status_code
+            last_status_code = response.status_code
 
-                if 200 <= response.status_code < 300:
-                    logger.info(
-                        "webhook_delivered",
-                        webhook_id=webhook.id,
-                        url=webhook.url,
-                        status_code=response.status_code,
-                        attempt=attempt,
-                    )
-                    if delivery_id:
-                        await _update_delivery_record(
-                            delivery_id,
-                            status="delivered",
-                            attempts=attempt,
-                            status_code=response.status_code,
-                            delivered_at=datetime.now(UTC),
-                        )
-                    return True
-
-                logger.warning(
-                    "webhook_delivery_non_2xx",
+            if 200 <= response.status_code < 300:
+                logger.info(
+                    "webhook_delivered",
                     webhook_id=webhook.id,
                     url=webhook.url,
                     status_code=response.status_code,
                     attempt=attempt,
                 )
-                last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+                if delivery_id:
+                    await _update_delivery_record(
+                        delivery_id,
+                        status="delivered",
+                        attempts=attempt,
+                        status_code=response.status_code,
+                        delivered_at=datetime.now(UTC),
+                    )
+                return True
 
-        except Exception as exc:
             logger.warning(
-                "webhook_delivery_error",
+                "webhook_delivery_non_2xx",
                 webhook_id=webhook.id,
                 url=webhook.url,
-                error=str(exc),
+                status_code=response.status_code,
                 attempt=attempt,
             )
-            last_error = str(exc)
+            last_error = f"HTTP {response.status_code}: {response.text[:200]}"
 
-        if attempt < MAX_RETRIES:
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * BACKOFF_MULTIPLIER, MAX_BACKOFF_SECONDS)
+    except Exception as exc:
+        logger.warning(
+            "webhook_delivery_error",
+            webhook_id=webhook.id,
+            url=webhook.url,
+            error=str(exc),
+            attempt=attempt,
+        )
+        last_error = str(exc)
 
-    # All retries exhausted — move to DLQ
-    logger.error(
-        "webhook_delivery_failed",
-        webhook_id=webhook.id,
-        url=webhook.url,
-        max_retries=MAX_RETRIES,
-    )
+    exhausted = attempt >= MAX_RETRIES
+    retry_delay = BACKOFF_SCHEDULE_SECONDS[min(attempt - 1, len(BACKOFF_SCHEDULE_SECONDS) - 1)]
+    next_retry_at = None if exhausted else datetime.now(UTC) + timedelta(seconds=retry_delay)
+    next_status = "dead_letter" if exhausted else "failed"
 
     if delivery_id:
         await _update_delivery_record(
             delivery_id,
-            status="dead_letter",
-            attempts=MAX_RETRIES,
+            status=next_status,
+            attempts=attempt,
             error=last_error,
             status_code=last_status_code,
+            next_retry_at=next_retry_at,
         )
+
+    logger.error(
+        "webhook_delivery_failed",
+        webhook_id=webhook.id,
+        url=webhook.url,
+        attempt=attempt,
+        next_status=next_status,
+        next_retry_at=next_retry_at.isoformat() if next_retry_at else None,
+    )
 
     return False
 

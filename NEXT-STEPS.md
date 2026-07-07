@@ -1,6 +1,6 @@
 # HandoffRail — Roadmap & Future Additions
 
-## ✅ Completed (Items 1-4)
+## ✅ Completed (Items 1-7, 9, 13)
 
 | # | Feature | Status | Commit |
 |---|---------|--------|--------|
@@ -8,48 +8,19 @@
 | 2 | TypeScript WebSocket Client | ✅ 40 tests, auto-reconnect, cross-platform | `5daab99` |
 | 3 | Batch Operations API | ✅ Create/claim/complete, 20 tests, both SDKs | `5daab99` |
 | 4 | Full-Text Search | ✅ FTS5 (SQLite) + tsvector (Postgres), 7 tests, both SDKs | `5daab99` |
+| 5 | Cursor Pagination | ✅ `cursor` + `next_cursor`, backward-compatible offset, SDKs | this commit |
+| 6 | Webhook Retry + Delivery History | ✅ scheduled retry, DLQ, replay, `GET /hooks/{id}/deliveries` | this commit |
+| 7 | Rate Limiting (Per API Key) | ✅ per-minute sliding window + hourly tier quotas, Redis/fallback | this commit |
+| 9 | OpenAPI Schema Export & API Explorer | ✅ `/docs`, `/redoc`, `/openapi.json`, exported `docs/openapi.json` | this commit |
+| 13 | Structured Audit Log | ✅ tenant-scoped `GET /api/v1/audit` over lifecycle events | this commit |
 
-**Test totals after items 1-4:** Python 457 passed / 24 skipped · TypeScript 139 passed
+**Test totals after items 1-7, 9, 13:** pending final verification
 
 ---
 
-## 📋 Remaining Roadmap (Items 5-15)
+## 📋 Remaining Roadmap (Items 8, 10-12, 14-15)
 
 These are the features analyzed during the roadmap session on 2026-07-05. Impact and effort ratings are approximate. Pick and choose when ready to implement.
-
-### 5. List Packets Refactor — Cursor Pagination
-**Impact:** Medium · **Effort:** Low
-
-Replace offset-based pagination on `GET /packets` with cursor-based pagination for better performance on large datasets. Currently uses `offset`/`limit` which degrades as offset grows.
-
-- Add `cursor` query param (based on `created_at` + `id` tuple)
-- Return `next_cursor` in response metadata
-- Keep backward compat: if no cursor provided, use offset (deprecation path)
-- Update both SDKs with cursor support
-- Update docs
-
-### 6. Webhook Retry with Exponential Backoff
-**Impact:** High · **Effort:** Medium
-
-Currently webhooks fire once with no retry. If the target is down, the event is lost. Add a robust retry mechanism.
-
-- Redis-backed retry queue (or in-memory for dev)
-- Exponential backoff: 1s → 5s → 30s → 5m → 1h → 6h (max 6 attempts)
-- Mark webhook deliveries as succeeded/failed in a `webhook_deliveries` table
-- Add `GET /hooks/{id}/deliveries` endpoint to inspect delivery history
-- Configurable retry policy per webhook
-- Dead-letter queue for permanently failed deliveries
-
-### 7. Rate Limiting (Per API Key)
-**Impact:** High · **Effort:** Low
-
-Add per-API-key rate limiting to prevent abuse. Currently only global rate limiting via slowapi.
-
-- Track request counts per API key in Redis (sliding window)
-- Configurable limits: `RATE_LIMIT_PER_MINUTE` (default 60)
-- Return `429 Too Many Requests` with `Retry-After` header
-- Add `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` headers
-- Exempt system endpoints (`/health`, `/ready`, `/metrics`)
 
 ### 8. CLI Tool (`handoffrail` command)
 **Impact:** Medium · **Effort:** Medium
@@ -70,17 +41,6 @@ handoffrail keys create --name="prod-key"
 - JSON/table output formats (`--format=json|table`)
 - Config file (`~/.handoffrail.toml`) for base URL + API key
 - Shell completion (bash/zsh)
-
-### 9. OpenAPI Schema Export & API Explorer
-**Impact:** Medium · **Effort:** Low
-
-FastAPI already generates OpenAPI but it's not exposed cleanly for consumers.
-
-- `GET /openapi.json` → already exists via FastAPI, ensure it's complete
-- Add a Swagger UI or ReDoc endpoint at `/docs` (FastAPI built-in)
-- Export schema file to `docs/openapi.json` in repo
-- Add downloadable schema link in docs
-- Ensure all new batch/search endpoints are documented
 
 ### 10. Redis Pub/Sub for Real-Time Events
 **Impact:** High · **Effort:** Medium
@@ -117,17 +77,6 @@ Add roles to API keys for finer-grained permissions.
 - Store role on API key, enforce in middleware
 - Add `role` field to API key creation endpoint
 
-### 13. Structured Audit Log
-**Impact:** Medium · **Effort:** Low
-
-Currently audit events are stored in the `events` table but not easily queryable for compliance.
-
-- Separate `audit_log` table with structured fields (actor, action, resource, timestamp, ip, user_agent)
-- `GET /audit` endpoint with filtering (by actor, action, date range)
-- Export to JSON/CSV
-- Retention policy (configurable TTL)
-- Add audit entries for: key creation/revocation, webhook registration/deletion, packet lifecycle events
-
 ### 14. Schema Validation & Migration Tooling
 **Impact:** Medium · **Effort:** Medium
 
@@ -160,17 +109,17 @@ When ready to implement the next batch:
 3. Create a branch or work on `master` directly (project preference)
 4. Follow the existing code patterns (async SQLAlchemy 2.0, Pydantic v2, structlog)
 5. Run quality gates: `pytest tests/ -x -q` + `npm test` + `npm run typecheck`
-6. Update `docs/api-reference.md` for any new endpoints
+6. Update `docs/api-reference.md` and regenerate `docs/openapi.json` for any new endpoints
 7. Update both Python and TypeScript SDKs
 8. Commit and push
 
 ## Suggested Next Batch (High Impact, Low Effort)
 
 If picking the next 3-4 items for maximum value with minimal effort:
-- **Item 7** (Rate Limiting) — essential for production hardening
-- **Item 9** (OpenAPI Export) — quick win, improves DX
-- **Item 5** (Cursor Pagination) — performance fix before scale
-- **Item 13** (Audit Log) — compliance-ready, straightforward
+- **Item 8** (CLI Tool) — useful for demos/support workflows
+- **Item 10** (Redis Pub/Sub) — horizontal scaling for WebSockets
+- **Item 11** (Multi-Tenant Isolation) — strongest remaining production boundary
+- **Item 14** (Schema Validation) — better enterprise data contracts
 
 ---
 

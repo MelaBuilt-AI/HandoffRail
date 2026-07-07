@@ -62,6 +62,9 @@ class Settings(BaseSettings):
         },
     }
 
+    # ── Per-minute sliding window rate limit (burst protection) ──────────────
+    rate_limit_per_minute: int = 60
+
     # ── Rate limit tiers (requests per hour) ─────────────────────────────────
     rate_limit_tiers: dict[str, int] = {
         "free": 100,

@@ -4,15 +4,16 @@ Replaces the pure in-memory RateLimitRegistry with Redis INCR + EXPIRE
 for atomic, horizontally-scalable rate limiting. Falls back to the
 original in-memory implementation when Redis is unavailable.
 
-Rate limiting: per API key, tier-based requests per hour.
+Rate limiting: per API key, tier-based requests per hour + per-minute sliding window.
 Quota enforcement: per tenant, daily handoff counts.
 """
 
 from __future__ import annotations
 
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from threading import Lock
+from uuid import uuid4
 
 import structlog
 from fastapi import Request, Response
@@ -132,6 +133,118 @@ class InMemoryDailyHandoffCounter:
             self._counts.clear()
 
 
+# ── Sliding window (per-minute burst protection) ─────────────────────────────
+
+SLIDING_WINDOW_SECONDS = 60  # 1 minute sliding window
+REDIS_SLIDING_WINDOW_PREFIX = "hr:ratelimit:sliding"
+DEFAULT_RATE_LIMIT_PER_MINUTE = 60
+
+
+class InMemorySlidingWindowCounter:
+    """Thread-safe in-memory sliding window counter (fallback only).
+
+    Uses a deque of timestamps for each key_id to track requests
+    within a sliding window. Old entries are trimmed on each check.
+    """
+
+    def __init__(self) -> None:
+        self._windows: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = Lock()
+
+    def check_and_increment(
+        self, key_id: str, limit: int, window_seconds: int = SLIDING_WINDOW_SECONDS
+    ) -> tuple[bool, int, int]:
+        """Check and increment sliding window.
+
+        Returns (allowed, remaining, retry_after_seconds).
+        When allowed, retry_after is 0.
+        """
+        with self._lock:
+            now = time.time()
+            cutoff = now - window_seconds
+            dq = self._windows[key_id]
+
+            # Remove expired entries
+            while dq and dq[0] < cutoff:
+                dq.popleft()
+
+            if len(dq) >= limit:
+                # Calculate retry-after from oldest entry
+                oldest = dq[0]
+                retry_after = int(window_seconds - (now - oldest)) + 1
+                return (False, 0, max(1, retry_after))
+
+            dq.append(now)
+            remaining = limit - len(dq)
+            return (True, max(0, remaining), 0)
+
+    def cleanup(self, key_id: str, max_age: float) -> None:
+        """Remove entries older than max_age for a key."""
+        with self._lock:
+            dq = self._windows.get(key_id)
+            if dq:
+                cutoff = time.time() - max_age
+                while dq and dq[0] < cutoff:
+                    dq.popleft()
+                if not dq:
+                    del self._windows[key_id]
+
+    def reset(self) -> None:
+        """Clear all counters."""
+        with self._lock:
+            self._windows.clear()
+
+
+async def redis_sliding_window_check_and_increment(
+    key_id: str,
+    limit: int,
+    window_seconds: int = SLIDING_WINDOW_SECONDS,
+) -> tuple[bool, int, int] | None:
+    """Check and increment sliding window in Redis using sorted sets.
+
+    Uses ZREMRANGEBYSCORE to trim old entries, ZCARD to count,
+    and ZADD to record the current request.
+
+    Returns (allowed, remaining, retry_after) or None if Redis is unavailable.
+    """
+    pubsub = get_pubsub_manager()
+    if not pubsub.is_connected or pubsub._redis is None:
+        return None
+
+    try:
+        redis_key = f"{REDIS_SLIDING_WINDOW_PREFIX}:{key_id}"
+        now = time.time()
+        cutoff = now - window_seconds
+
+        # Remove entries outside the window
+        await pubsub._redis.zremrangebyscore(redis_key, 0, cutoff)
+
+        # Count remaining entries
+        count = await pubsub._redis.zcard(redis_key)
+
+        if count >= limit:
+            # Get oldest entry's score to calculate retry-after
+            oldest = await pubsub._redis.zrangebyscore(
+                redis_key, 0, now, withscores=True, count=1
+            )
+            if oldest:
+                retry_after = int(window_seconds - (now - oldest[0][1])) + 1
+            else:
+                retry_after = 1
+            return (False, 0, max(1, retry_after))
+
+        # Add current request (microsecond timestamp + random for uniqueness)
+        member = f"{int(now * 1_000_000)}:{uuid4().hex[:8]}"
+        await pubsub._redis.zadd(redis_key, {member: now})
+        await pubsub._redis.expire(redis_key, window_seconds + 60)
+
+        remaining = limit - count - 1
+        return (True, max(0, remaining), 0)
+    except Exception as exc:
+        logger.warning("redis_sliding_window_error", error=str(exc), key_id=key_id)
+        return None
+
+
 # ── Redis-backed implementations ───────────────────────────────────────────────
 
 
@@ -213,6 +326,7 @@ async def redis_get_daily_handoff_count(tenant_id: str, day_key: str) -> int | N
 
 rate_limiter_registry = InMemoryRateLimitRegistry()
 daily_handoff_counter = InMemoryDailyHandoffCounter()
+sliding_window_counter = InMemorySlidingWindowCounter()
 
 # ── Backward-compatible aliases (used by tests and external code) ────────────────
 # The original class names are preserved as aliases so existing imports
@@ -222,28 +336,32 @@ DailyHandoffCounter = InMemoryDailyHandoffCounter
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Per-API-key, tier-based rate limiting middleware.
+    """Per-API-key rate limiting middleware with per-minute sliding window + tier-based per-hour quota.
+
+    Two-layer rate limiting:
+    1. Per-minute sliding window (burst protection) — checked first
+    2. Per-hour tier-based fixed window (quota enforcement) — existing behavior
 
     Uses Redis for atomic counting when available, falls back to
     in-memory counters when Redis is unavailable.
-    Adds X-RateLimit-* headers to all responses.
+    Adds X-RateLimit-* and Retry-After headers.
     """
 
-    def __init__(self, app: ASGIApp, tier_limits: dict[str, int] | None = None) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        tier_limits: dict[str, int] | None = None,
+        rate_limit_per_minute: int = DEFAULT_RATE_LIMIT_PER_MINUTE,
+    ) -> None:
         super().__init__(app)
         self.tier_limits = tier_limits or TIER_LIMITS
+        self.rate_limit_per_minute = rate_limit_per_minute
         self.registry = rate_limiter_registry
+        self.sliding_counter = sliding_window_counter
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        # Exempt health/docs paths from rate limiting
-        path = request.url.path
-        if path in EXEMPT_PATHS:
-            response = await call_next(request)
-            return response
-
-        # Get API key info from request state or headers
+    async def _get_key_info(self, request: Request) -> tuple[str, str]:
+        """Extract tier and key_id from request."""
         api_key = getattr(request.state, "api_key", None)
-
         if api_key is not None:
             tier = getattr(api_key, "tier", DEFAULT_TIER)
             key_id = api_key.id
@@ -258,41 +376,104 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             else:
                 tier = DEFAULT_TIER
                 key_id = f"ip:{request.client.host if request.client else 'unknown'}"
+        return tier, key_id
 
+    async def _check_minute_limit(self, key_id: str, limit: int) -> tuple[bool, int, int]:
+        """Check per-minute sliding window limit.
+
+        Tries Redis sorted set first, falls back to in-memory deque.
+        Returns (allowed, remaining, retry_after_seconds).
+        """
+        result = await redis_sliding_window_check_and_increment(key_id, limit)
+        if result is not None:
+            return result
+        return self.sliding_counter.check_and_increment(key_id, limit)
+
+    async def _check_hour_limit(
+        self, key_id: str, tier: str
+    ) -> tuple[int, int]:
+        """Check per-hour tier-based fixed window limit.
+
+        Returns (current_count_in_window, remaining_before_this_request).
+        Already increments the counter as a side effect.
+        """
         limit = self.tier_limits.get(tier, self.tier_limits[DEFAULT_TIER])
-
-        # Calculate window
         current_time = time.time()
         window_key = int(current_time // RATE_LIMIT_WINDOW_SECONDS)
         window_start = float(window_key * RATE_LIMIT_WINDOW_SECONDS)
-        reset_seconds = int(window_start + RATE_LIMIT_WINDOW_SECONDS - current_time)
 
         # Try Redis first, fall back to in-memory
         current_count = await redis_get_rate_limit_count(key_id, window_start)
 
         if current_count is not None:
-            # Redis is available — use atomic INCR
             new_count = await redis_increment_rate_limit(
                 key_id, window_start, RATE_LIMIT_WINDOW_SECONDS
             )
             if new_count is not None:
-                current_count = new_count - 1  # What it was before this request
+                current_count = new_count - 1
             else:
-                # Redis failed mid-operation — fall back to in-memory
                 self.registry.cleanup_old(key_id, window_start, RATE_LIMIT_WINDOW_SECONDS * 2)
                 current_count = self.registry.get_count(key_id, window_start)
                 self.registry.increment(key_id, window_start)
         else:
-            # Redis unavailable — use in-memory
             self.registry.cleanup_old(key_id, window_start, RATE_LIMIT_WINDOW_SECONDS * 2)
             current_count = self.registry.get_count(key_id, window_start)
             self.registry.increment(key_id, window_start)
 
-        remaining = max(0, limit - current_count - 1)
+        return current_count, limit
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        # Exempt health/docs paths from rate limiting
+        path = request.url.path
+        if path in EXEMPT_PATHS:
+            response = await call_next(request)
+            return response
+
+        # Get API key info
+        tier, key_id = await self._get_key_info(request)
+
+        # ── 1. Per-minute sliding window check (burst protection) ───────────────
+        if self.rate_limit_per_minute > 0:
+            minute_allowed, minute_remaining, minute_retry_after = await self._check_minute_limit(
+                key_id, self.rate_limit_per_minute
+            )
+
+            if not minute_allowed:
+                logger.warning(
+                    "rate_limit_exceeded_per_minute",
+                    key_id=key_id,
+                    tier=tier,
+                    limit=self.rate_limit_per_minute,
+                    window_seconds=SLIDING_WINDOW_SECONDS,
+                    retry_after=minute_retry_after,
+                )
+                response = Response(
+                    content='{"detail":"Rate limit exceeded","field":"rate_limit"}',
+                    status_code=429,
+                    media_type="application/json",
+                )
+                response.headers["X-RateLimit-Limit"] = str(self.rate_limit_per_minute)
+                response.headers["X-RateLimit-Remaining"] = "0"
+                response.headers["X-RateLimit-Reset"] = str(minute_retry_after)
+                response.headers["Retry-After"] = str(minute_retry_after)
+                response.headers["X-RateLimit-Tier"] = tier
+                return response
+        else:
+            # rate_limit_per_minute <= 0 means disabled — skip check
+            minute_remaining = 0
+            minute_retry_after = 0
+
+        # ── 2. Per-hour tier-based fixed window check (quota enforcement) ──────
+        current_time = time.time()
+        window_key = int(current_time // RATE_LIMIT_WINDOW_SECONDS)
+        window_start = float(window_key * RATE_LIMIT_WINDOW_SECONDS)
+        reset_seconds = int(window_start + RATE_LIMIT_WINDOW_SECONDS - current_time)
+
+        current_count, limit = await self._check_hour_limit(key_id, tier)
 
         if current_count >= limit:
             logger.warning(
-                "rate_limit_exceeded",
+                "rate_limit_exceeded_per_hour",
                 key_id=key_id,
                 tier=tier,
                 limit=limit,
@@ -306,15 +487,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             response.headers["X-RateLimit-Limit"] = str(limit)
             response.headers["X-RateLimit-Remaining"] = "0"
             response.headers["X-RateLimit-Reset"] = str(reset_seconds)
+            response.headers["Retry-After"] = str(reset_seconds)
             response.headers["X-RateLimit-Tier"] = tier
             return response
 
         response = await call_next(request)
 
-        # Add rate limit headers
-        response.headers["X-RateLimit-Limit"] = str(limit)
-        response.headers["X-RateLimit-Remaining"] = str(remaining)
-        response.headers["X-RateLimit-Reset"] = str(reset_seconds)
+        # ── 3. Add rate limit headers ─────────────────────────────────────────
+        if self.rate_limit_per_minute > 0:
+            response.headers["X-RateLimit-Limit"] = str(self.rate_limit_per_minute)
+            response.headers["X-RateLimit-Remaining"] = str(minute_remaining)
+            response.headers["X-RateLimit-Reset"] = str(minute_retry_after or SLIDING_WINDOW_SECONDS)
+        else:
+            # Per-minute disabled — show per-hour limits
+            response.headers["X-RateLimit-Limit"] = str(limit)
+            response.headers["X-RateLimit-Remaining"] = str(max(0, limit - current_count - 1))
+            response.headers["X-RateLimit-Reset"] = str(reset_seconds)
         response.headers["X-RateLimit-Tier"] = tier
 
         return response

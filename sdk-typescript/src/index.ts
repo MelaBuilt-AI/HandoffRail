@@ -67,6 +67,8 @@ export type {
   PacketUpdate,
   PacketHistoryResponse,
   PacketEvent,
+  AuditLogEntry,
+  AuditLogResponse,
   ChainHandoffRequest,
   HitlRespondRequest,
   WebhookCreate,
@@ -87,9 +89,11 @@ export type {
   HitlCheckpoint,
   // Options
   ListPacketsOptions,
+  ListAuditOptions,
   ClaimPacketOptions,
   HitlRespondOptions,
   RegisterWebhookOptions,
+  WebhookDelivery,
   // Batch
   BatchCreateError,
   BatchCreateResponse,

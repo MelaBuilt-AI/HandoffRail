@@ -27,6 +27,7 @@ from handoffrail.sdk.exceptions import (
     ValidationError,
 )
 from handoffrail.sdk.models import (
+    AuditLogResponse,
     BatchClaimRequest,
     BatchClaimResponse,
     BatchCompleteRequest,
@@ -225,6 +226,7 @@ class AsyncHandoffRailClient:
         created_before: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        cursor: str | None = None,
     ) -> PacketListResponse:
         """List packets with filtering and pagination."""
         params: dict[str, Any] = {"limit": limit, "offset": offset}
@@ -242,9 +244,38 @@ class AsyncHandoffRailClient:
             params["created_after"] = created_after
         if created_before:
             params["created_before"] = created_before
+        if cursor:
+            params["cursor"] = cursor
 
         data = await self._request("GET", "/packets", params=params)
         return PacketListResponse.from_dict(data)
+
+    async def list_audit_log(
+        self,
+        *,
+        actor: str | None = None,
+        action: str | None = None,
+        packet_id: str | UUID | None = None,
+        created_after: str | None = None,
+        created_before: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> AuditLogResponse:
+        """List structured audit log entries."""
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if actor:
+            params["actor"] = actor
+        if action:
+            params["action"] = action
+        if packet_id:
+            params["packet_id"] = str(packet_id)
+        if created_after:
+            params["created_after"] = created_after
+        if created_before:
+            params["created_before"] = created_before
+
+        data = await self._request("GET", "/audit", params=params)
+        return AuditLogResponse.from_dict(data)
 
     async def claim_packet(
         self,
@@ -316,7 +347,11 @@ class AsyncHandoffRailClient:
         secret: str,
     ) -> WebhookResponse:
         """Register a new webhook."""
-        webhook = WebhookCreate(url=url, events=events or ["packet.created", "packet.claimed", "packet.completed", "packet.failed"], secret=secret)
+        webhook = WebhookCreate(
+            url=url,
+            events=events or ["packet.created", "packet.claimed", "packet.completed", "packet.failed"],
+            secret=secret,
+        )
         data = await self._request("POST", "/hooks", json_data=webhook.to_dict())
         return WebhookResponse.from_dict(data)
 
@@ -328,6 +363,22 @@ class AsyncHandoffRailClient:
     async def delete_webhook(self, webhook_id: str) -> None:
         """Deactivate (soft-delete) a webhook."""
         await self._request("DELETE", f"/hooks/{webhook_id}")
+
+    async def list_webhook_deliveries(
+        self,
+        webhook_id: str,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List delivery history for one webhook."""
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if status:
+            params["status"] = status
+
+        data = await self._request("GET", f"/hooks/{webhook_id}/deliveries", params=params)
+        return data if isinstance(data, list) else []
 
     # ── Batch Operations ───────────────────────────────────────────────────────
 

@@ -19,11 +19,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.database import _init_fts, async_session, engine
 from app.main import create_app
 from app.middleware.auth import generate_api_key
-from app.middleware.rate_limit import rate_limiter_registry
+from app.middleware.rate_limit import rate_limiter_registry, sliding_window_counter
 from app.models.db import ApiKey, Base
 
 # Create test app with very high rate limits so tests don't get throttled
-_test_app = create_app(tier_limits={"free": 100000, "pro": 100000, "business": 100000})
+_test_app = create_app(
+    tier_limits={"free": 100000, "pro": 100000, "business": 100000},
+    rate_limit_per_minute=100000,
+)
 
 # Generated test API key (created once per test session)
 _test_api_key: str | None = None
@@ -71,6 +74,7 @@ async def setup_db():
 
     # Reset the global rate limiter counters between tests
     rate_limiter_registry.reset()
+    sliding_window_counter.reset()
 
     yield
 

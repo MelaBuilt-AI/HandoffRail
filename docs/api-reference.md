@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for all 19 HandoffRail API endpoints.
+Complete reference for all HandoffRail API endpoints.
 
 ## Base URL
 
@@ -20,7 +20,19 @@ Create keys via `POST /api/v1/keys`. Keys are hashed at rest — the full key is
 
 ## Rate Limiting
 
-Rate limits are enforced per API key based on tier:
+Rate limits are enforced per API key at two levels:
+
+### Per-Minute Burst Protection (Sliding Window)
+
+A sliding window rate limiter prevents short traffic bursts. Default: **60 requests per minute**.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `HR_RATE_LIMIT_PER_MINUTE` | 60 | Max requests per 60-second sliding window |
+
+### Per-Hour Quota (Tier-Based)
+
+Hourly quotas are enforced per API key based on tier:
 
 | Tier | Requests / Hour |
 |------|----------------|
@@ -28,15 +40,25 @@ Rate limits are enforced per API key based on tier:
 | Pro | 1,000 |
 | Business | 10,000 |
 
-Rate limit info is returned in response headers:
+### Rate Limit Headers
+
+Rate limit info is returned in all API responses:
 
 ```
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 87
-X-RateLimit-Reset: 1685491200
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 47
+X-RateLimit-Reset: 42
+X-RateLimit-Tier: free
 ```
 
-When exceeded, the API returns `429 Too Many Requests` with a `Retry-After` header.
+- `X-RateLimit-Limit` — Max requests in the current per-minute window
+- `X-RateLimit-Remaining` — Requests remaining in the current window
+- `X-RateLimit-Reset` — Seconds until the window resets
+- `X-RateLimit-Tier` — The request's tier (free / pro / business)
+
+When exceeded, the API returns `429 Too Many Requests` with a `Retry-After` header indicating when to retry.
+
+Health and monitoring endpoints (`/health`, `/ready`, `/metrics`, `/docs`, `/openapi.json`, `/redoc`) are exempt from rate limiting.
 
 ---
 
@@ -119,8 +141,9 @@ List packets with filtering, sorting, and pagination.
 | `created_before` | datetime | — | ISO 8601 timestamp |
 | `limit` | integer | 50 | Max results (1–200) |
 | `offset` | integer | 0 | Pagination offset |
-| `sort` | string | `created_at` | Sort field: `created_at`, `priority`, `status` |
-| `order` | string | `desc` | Sort order: `asc` or `desc` |
+| `cursor` | string | — | Opaque cursor returned as `next_cursor`; preferred for large datasets |
+
+Results are ordered by `created_at DESC, id DESC`. `offset` remains supported for compatibility. For large datasets, request the first page without `cursor`, then pass `next_cursor` until it returns `null`.
 
 **Response `200 OK`:**
 
@@ -130,10 +153,7 @@ List packets with filtering, sorting, and pagination.
   "total": 142,
   "limit": 50,
   "offset": 0,
-  "_links": {
-    "next": "/api/v1/packets?offset=50&limit=50",
-    "prev": null
-  }
+  "next_cursor": "eyJjcmVhdGVkX2F0IjoiLi4uIiwiaWQiOiIuLi4ifQ"
 }
 ```
 
@@ -298,6 +318,8 @@ Audit trail of all status transitions and modifications for a packet.
 
 **Webhook Payload:** POST to `url` with full packet payload and `X-HR-Signature` HMAC-SHA256 header.
 
+**Retry Policy:** failed deliveries are persisted and retried on a schedule of `1s → 5s → 30s → 5m → 1h → 6h` with a maximum of 6 attempts. Permanently failed deliveries move to the dead letter queue.
+
 **Verifying Webhooks:**
 
 ```python
@@ -321,6 +343,88 @@ All webhooks for the authenticated tenant.
 ### `DELETE /hooks/{id}` — Deactivate Webhook
 
 Soft-delete. **Response `204 No Content`**.
+
+---
+
+### `GET /hooks/{id}/deliveries` — Webhook Delivery History
+
+Lists delivery attempts for one webhook.
+
+**Query Parameters:** `status`, `limit`, `offset`.
+
+**Response `200 OK`:**
+
+```json
+[
+  {
+    "id": "delivery-uuid",
+    "webhook_id": "webhook-uuid",
+    "packet_id": "packet-uuid",
+    "event_type": "packet.created",
+    "status": "failed",
+    "attempts": 1,
+    "last_error": "timeout",
+    "last_status_code": null,
+    "next_retry_at": "2026-07-07T16:35:00Z",
+    "delivered_at": null,
+    "created_at": "2026-07-07T16:34:59Z",
+    "updated_at": "2026-07-07T16:34:59Z"
+  }
+]
+```
+
+### `GET /hooks/dlq` — Dead Letter Queue
+
+Lists permanently failed webhook deliveries for the authenticated tenant.
+
+### `POST /hooks/dlq/{delivery_id}/replay` — Replay DLQ Entry
+
+Resets one dead-letter delivery and attempts delivery again.
+
+### `POST /hooks/dlq/retry-all` — Retry Due Deliveries
+
+Retries failed deliveries whose `next_retry_at` is due.
+
+---
+
+## Audit Endpoints
+
+### `GET /audit` — Structured Audit Log
+
+Tenant-scoped packet lifecycle audit log, backed by the packet event trail.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `actor` | string | — | Filter by actor |
+| `action` | string | — | Filter by action/event type |
+| `packet_id` | string | — | Filter by packet ID |
+| `created_after` | datetime | — | Only entries at or after this timestamp |
+| `created_before` | datetime | — | Only entries at or before this timestamp |
+| `limit` | integer | 50 | Max entries (1–200) |
+| `offset` | integer | 0 | Pagination offset |
+
+**Response `200 OK`:**
+
+```json
+{
+  "entries": [
+    {
+      "id": "event-uuid",
+      "packet_id": "packet-uuid",
+      "actor": "agent:sales-01",
+      "action": "created",
+      "resource": "packet",
+      "details": {},
+      "timestamp": "2026-07-07T16:35:00Z"
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}
+```
 
 ---
 
@@ -386,6 +490,16 @@ Standard Prometheus format. No authentication required.
 | `handoffrail_request_latency_seconds` | Histogram | Request latency by method, endpoint |
 | `handoffrail_active_packets` | Gauge | Non-terminal packet count |
 | `handoffrail_handoffs_total` | Counter | Handoffs per tenant |
+
+---
+
+### `GET /openapi.json` — OpenAPI Schema
+
+Returns the live OpenAPI schema. A committed export is also available at `docs/openapi.json`.
+
+### `GET /docs` and `GET /redoc` — API Explorer
+
+Swagger UI and ReDoc explorers are enabled by FastAPI.
 
 ---
 

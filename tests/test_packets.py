@@ -295,6 +295,42 @@ async def test_get_packet_preserves_all_fields(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_list_packets_cursor_pagination(client: AsyncClient):
+    """GET /packets supports cursor pagination while keeping offset compatibility."""
+    for i in range(3):
+        payload = _minimal_payload()
+        payload["context"]["summary"] = f"Cursor packet {i}"
+        response = await client.post("/api/v1/packets", json=payload)
+        assert response.status_code == 201
+
+    first_page = await client.get("/api/v1/packets", params={"limit": 2})
+    assert first_page.status_code == 200
+    first_data = first_page.json()
+    assert len(first_data["packets"]) == 2
+    assert first_data["next_cursor"]
+
+    second_page = await client.get(
+        "/api/v1/packets",
+        params={"limit": 2, "cursor": first_data["next_cursor"]},
+    )
+    assert second_page.status_code == 200
+    second_data = second_page.json()
+    assert len(second_data["packets"]) == 1
+
+    first_ids = {packet["id"] for packet in first_data["packets"]}
+    second_ids = {packet["id"] for packet in second_data["packets"]}
+    assert first_ids.isdisjoint(second_ids)
+
+
+@pytest.mark.asyncio
+async def test_list_packets_invalid_cursor(client: AsyncClient):
+    """Malformed cursors return a 400 instead of silently falling back."""
+    response = await client.get("/api/v1/packets", params={"cursor": "not-a-cursor"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid cursor"
+
+
+@pytest.mark.asyncio
 async def test_health_check(client: AsyncClient):
     """GET /health returns ok status."""
     response = await client.get("/health")

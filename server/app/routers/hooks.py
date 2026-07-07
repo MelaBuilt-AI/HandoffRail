@@ -12,13 +12,13 @@ from typing import Any
 from uuid import uuid4
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.middleware.auth import get_api_key_from_request
-from app.models.db import ApiKey, Webhook
+from app.models.db import ApiKey, Webhook, WebhookDelivery
 from app.models.packet import WebhookCreate, WebhookResponse
 from app.services.webhook import get_dlq_entries, replay_dlq_entry, retry_failed_deliveries
 
@@ -141,6 +141,62 @@ async def delete_webhook(
     await db.commit()
 
     logger.info("webhook_deactivated", webhook_id=webhook_id, tenant_id=api_key.tenant_id)
+
+
+@router.get(
+    "/{webhook_id}/deliveries",
+    response_model=list[dict[str, Any]],
+)
+async def list_webhook_deliveries(
+    webhook_id: str,
+    status_filter: str | None = Query(None, alias="status", description="Filter by delivery status"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
+) -> list[dict[str, Any]]:
+    """List delivery history for one webhook in the authenticated tenant."""
+    hook_result = await db.execute(
+        select(Webhook).where(
+            Webhook.id == webhook_id,
+            Webhook.tenant_id == api_key.tenant_id,
+        )
+    )
+    if hook_result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Webhook {webhook_id} not found",
+        )
+
+    query = select(WebhookDelivery).where(
+        WebhookDelivery.webhook_id == webhook_id,
+        WebhookDelivery.tenant_id == api_key.tenant_id,
+    )
+    if status_filter:
+        query = query.where(WebhookDelivery.status == status_filter)
+
+    result = await db.execute(
+        query.order_by(WebhookDelivery.created_at.desc()).offset(offset).limit(limit)
+    )
+    deliveries = result.scalars().all()
+
+    return [
+        {
+            "id": d.id,
+            "webhook_id": d.webhook_id,
+            "packet_id": d.packet_id,
+            "event_type": d.event_type,
+            "status": d.status,
+            "attempts": d.attempts,
+            "last_error": d.last_error,
+            "last_status_code": d.last_status_code,
+            "next_retry_at": d.next_retry_at.isoformat() if d.next_retry_at else None,
+            "delivered_at": d.delivered_at.isoformat() if d.delivered_at else None,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+        }
+        for d in deliveries
+    ]
 
 
 # ── Dead Letter Queue endpoints ────────────────────────────────────────────────

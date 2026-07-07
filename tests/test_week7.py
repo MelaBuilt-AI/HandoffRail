@@ -606,3 +606,271 @@ class TestTierSizeLimits:
         )
         # Should not be 413 (too large)
         assert resp.status_code != 413
+
+
+# ── Per-minute sliding window rate limiting tests ──────────────────────────────
+
+
+class TestPerMinuteRateLimiting:
+    """Tests for the per-minute sliding window rate limiter."""
+
+    @pytest_asyncio.fixture(autouse=True)
+    async def setup_db(self):
+        from app.database import engine
+
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        yield
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+
+    async def _create_api_key(self) -> str:
+        """Create a test API key and return the plain key string."""
+        from uuid import uuid4
+
+        from app.database import async_session
+        from app.middleware.auth import generate_api_key
+        from app.models.db import ApiKey
+
+        plain_key, key_hash = generate_api_key()
+        key_prefix = plain_key[:8]
+        db_key = ApiKey(
+            id=str(uuid4()),
+            name="test-key",
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            tenant_id="default",
+            tier="free",
+        )
+        async with async_session() as session:
+            session.add(db_key)
+            await session.commit()
+            await session.refresh(db_key)
+        return plain_key
+
+    @pytest_asyncio.fixture
+    async def limited_client(self):
+        """Create a test app with low per-minute limit for hitting."""
+        from app.middleware.rate_limit import rate_limiter_registry, sliding_window_counter
+
+        rate_limiter_registry.reset()
+        sliding_window_counter.reset()
+        app = create_app(
+            tier_limits={"free": 100000, "pro": 100000, "business": 100000},
+            rate_limit_per_minute=5,
+        )
+        api_key = await self._create_api_key()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"X-API-Key": api_key},
+        ) as ac:
+            yield ac
+
+    @pytest_asyncio.fixture
+    async def client(self):
+        """Client fixture for tests that don't need low limits."""
+        from app.middleware.rate_limit import rate_limiter_registry, sliding_window_counter
+
+        rate_limiter_registry.reset()
+        sliding_window_counter.reset()
+        app = create_app(
+            tier_limits={"free": 100000, "pro": 100000, "business": 100000},
+            rate_limit_per_minute=100000,
+        )
+        api_key = await self._create_api_key()
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"X-API-Key": api_key},
+        ) as ac:
+            yield ac
+
+    async def test_hit_rate_limit(self, limited_client):
+        """Exceeding the per-minute limit returns 429."""
+        for i in range(5):
+            resp = await limited_client.get("/api/v1/packets")
+            assert resp.status_code == 200, f"Request {i + 1} should succeed"
+
+        resp = await limited_client.get("/api/v1/packets")
+        assert resp.status_code == 429
+        assert resp.json()["detail"] == "Rate limit exceeded"
+
+    async def test_429_has_retry_after_header(self, limited_client):
+        """429 response includes Retry-After header."""
+        for _ in range(5):
+            await limited_client.get("/api/v1/packets")
+
+        resp = await limited_client.get("/api/v1/packets")
+        assert resp.status_code == 429
+        assert "retry-after" in resp.headers
+        retry_after = int(resp.headers["retry-after"])
+        assert retry_after > 0
+
+    async def test_429_has_rate_limit_headers(self, limited_client):
+        """429 response includes all X-RateLimit-* headers with correct values."""
+        for _ in range(5):
+            await limited_client.get("/api/v1/packets")
+
+        resp = await limited_client.get("/api/v1/packets")
+        assert resp.status_code == 429
+        assert resp.headers["x-ratelimit-remaining"] == "0"
+        assert resp.headers["x-ratelimit-limit"] == "5"
+        assert "x-ratelimit-reset" in resp.headers
+        assert int(resp.headers["x-ratelimit-reset"]) > 0
+        assert resp.headers["x-ratelimit-tier"] in ("free", "pro", "business")
+
+    async def test_exempt_paths_not_rate_limited(self, limited_client):
+        """Health, ready, and metrics endpoints bypass rate limiting."""
+        for _ in range(5):
+            await limited_client.get("/api/v1/packets")
+
+        health = await limited_client.get("/health")
+        assert health.status_code == 200
+        assert "x-ratelimit-limit" not in health.headers
+
+        ready = await limited_client.get("/ready")
+        assert ready.status_code == 200
+
+        metrics = await limited_client.get("/metrics")
+        assert metrics.status_code == 200
+
+        blocked = await limited_client.get("/api/v1/packets")
+        assert blocked.status_code == 429
+
+    async def test_rate_limit_recovers(self, limited_client):
+        """After the window passes, requests should succeed again."""
+        from app.middleware.rate_limit import sliding_window_counter
+
+        for _ in range(6):
+            await limited_client.get("/api/v1/packets")
+
+        sliding_window_counter.reset()
+
+        resp = await limited_client.get("/api/v1/packets")
+        assert resp.status_code == 200
+
+    async def test_success_response_has_rate_limit_headers(self, client):
+        """Successful responses include X-RateLimit-* headers from per-minute window."""
+        resp = await client.get("/api/v1/packets")
+        assert resp.status_code == 200
+        assert "x-ratelimit-limit" in resp.headers
+        assert "x-ratelimit-remaining" in resp.headers
+        assert "x-ratelimit-reset" in resp.headers
+        assert "x-ratelimit-tier" in resp.headers
+        remaining = int(resp.headers["x-ratelimit-remaining"])
+        assert remaining > 0
+
+    async def test_rate_limit_headers_decrease(self, limited_client):
+        """X-RateLimit-Remaining decreases with each request."""
+        resp1 = await limited_client.get("/api/v1/packets")
+        r1 = int(resp1.headers["x-ratelimit-remaining"])
+
+        resp2 = await limited_client.get("/api/v1/packets")
+        r2 = int(resp2.headers["x-ratelimit-remaining"])
+
+        assert r2 == r1 - 1
+
+    async def test_configurable_rate_limit_per_minute(self):
+        """rate_limit_per_minute can be configured in Settings."""
+        from app.config import Settings, reset_settings
+
+        reset_settings()
+        s = Settings()
+        assert s.rate_limit_per_minute == 60
+        reset_settings()
+
+    async def test_env_var_overrides_rate_limit_per_minute(self, monkeypatch):
+        """HR_RATE_LIMIT_PER_MINUTE env var overrides the default."""
+        from app.config import Settings, reset_settings
+
+        reset_settings()
+        monkeypatch.setenv("HR_RATE_LIMIT_PER_MINUTE", "100")
+        s = Settings()
+        assert s.rate_limit_per_minute == 100
+        reset_settings()
+
+    async def test_disabled_rate_limit(self):
+        """rate_limit_per_minute <= 0 disables the per-minute check."""
+        from uuid import uuid4
+
+        from app.database import async_session, engine
+        from app.middleware.auth import generate_api_key
+        from app.models.db import ApiKey
+
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        plain_key, key_hash = generate_api_key()
+        key_prefix = plain_key[:8]
+        db_key = ApiKey(
+            id=str(uuid4()),
+            name="test-key",
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            tenant_id="default",
+            tier="free",
+        )
+        async with async_session() as session:
+            session.add(db_key)
+            await session.commit()
+
+        from app.middleware.rate_limit import rate_limiter_registry, sliding_window_counter
+
+        rate_limiter_registry.reset()
+        sliding_window_counter.reset()
+        app = create_app(
+            tier_limits={"free": 100000, "pro": 100000, "business": 100000},
+            rate_limit_per_minute=0,
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"X-API-Key": plain_key},
+        ) as ac:
+            for _ in range(100):
+                resp = await ac.get("/api/v1/packets")
+                assert resp.status_code == 200
+
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+
+    async def test_in_memory_sliding_window_counter_basic(self):
+        """InMemorySlidingWindowCounter tracks requests correctly."""
+        from app.middleware.rate_limit import InMemorySlidingWindowCounter
+
+        counter = InMemorySlidingWindowCounter()
+
+        allowed, remaining, retry_after = counter.check_and_increment("test-key", 3, 60)
+        assert allowed is True
+        assert remaining == 2
+        assert retry_after == 0
+
+        for _ in range(2):
+            counter.check_and_increment("test-key", 3, 60)
+
+        allowed, remaining, retry_after = counter.check_and_increment("test-key", 3, 60)
+        assert allowed is False
+        assert remaining == 0
+        assert retry_after > 0
+
+    async def test_in_memory_sliding_window_cleanup(self):
+        """InMemorySlidingWindowCounter cleans up old entries."""
+        import asyncio
+
+        from app.middleware.rate_limit import InMemorySlidingWindowCounter
+
+        counter = InMemorySlidingWindowCounter()
+
+        counter.check_and_increment("test-key", 10, 0.01)
+
+        await asyncio.sleep(0.02)
+
+        counter.cleanup("test-key", 0.01)
+
+        allowed, remaining, _ = counter.check_and_increment("test-key", 10, 60)
+        assert allowed is True
+        assert remaining == 9

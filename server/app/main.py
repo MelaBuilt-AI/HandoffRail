@@ -17,6 +17,7 @@ from app.database import init_db
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.size_limit import RequestSizeLimitMiddleware
 from app.routers import (
+    audit_router,
     dashboard_router,
     health_router,
     hooks_router,
@@ -76,7 +77,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("handoffrail_stopping", message="Shutting down")
 
 
-def create_app(tier_limits: dict[str, int] | None = None) -> FastAPI:
+def create_app(
+    tier_limits: dict[str, int] | None = None,
+    rate_limit_per_minute: int | None = None,
+) -> FastAPI:
     """Application factory — creates and configures the FastAPI app."""
     settings = get_settings()
 
@@ -102,10 +106,17 @@ def create_app(tier_limits: dict[str, int] | None = None) -> FastAPI:
     # Request size limiting — tier-aware
     app.add_middleware(RequestSizeLimitMiddleware)
 
-    # Rate limiting — per API key, tier-based
-    app.add_middleware(RateLimitMiddleware, tier_limits=tier_limits or settings.rate_limit_tiers)
+    # Rate limiting — per API key, tier-based + per-minute sliding window
+    app.add_middleware(
+        RateLimitMiddleware,
+        tier_limits=tier_limits or settings.rate_limit_tiers,
+        rate_limit_per_minute=(
+            rate_limit_per_minute if rate_limit_per_minute is not None else settings.rate_limit_per_minute
+        ),
+    )
 
     # Register routers
+    app.include_router(audit_router)
     app.include_router(packets_router)
     app.include_router(keys_router)
     app.include_router(hooks_router)

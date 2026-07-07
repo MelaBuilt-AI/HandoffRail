@@ -34,6 +34,7 @@ from handoffrail.sdk.exceptions import (
     ValidationError,
 )
 from handoffrail.sdk.models import (
+    AuditLogResponse,
     BatchClaimRequest,
     BatchClaimResponse,
     BatchCompleteRequest,
@@ -253,6 +254,7 @@ class HandoffRailClient:
         created_before: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        cursor: str | None = None,
     ) -> PacketListResponse:
         """List packets with filtering and pagination.
 
@@ -266,6 +268,7 @@ class HandoffRailClient:
             created_before: ISO 8601 datetime string.
             limit: Max results per page (1–200, default 50).
             offset: Pagination offset.
+            cursor: Opaque cursor returned as ``next_cursor``.
 
         Returns:
             Paginated list of packets.
@@ -285,9 +288,38 @@ class HandoffRailClient:
             params["created_after"] = created_after
         if created_before:
             params["created_before"] = created_before
+        if cursor:
+            params["cursor"] = cursor
 
         data = self._request("GET", "/packets", params=params)
         return PacketListResponse.from_dict(data)
+
+    def list_audit_log(
+        self,
+        *,
+        actor: str | None = None,
+        action: str | None = None,
+        packet_id: str | UUID | None = None,
+        created_after: str | None = None,
+        created_before: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> AuditLogResponse:
+        """List structured audit log entries."""
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if actor:
+            params["actor"] = actor
+        if action:
+            params["action"] = action
+        if packet_id:
+            params["packet_id"] = str(packet_id)
+        if created_after:
+            params["created_after"] = created_after
+        if created_before:
+            params["created_before"] = created_before
+
+        data = self._request("GET", "/audit", params=params)
+        return AuditLogResponse.from_dict(data)
 
     def claim_packet(
         self,
@@ -432,7 +464,11 @@ class HandoffRailClient:
         Returns:
             The registered webhook response.
         """
-        webhook = WebhookCreate(url=url, events=events or ["packet.created", "packet.claimed", "packet.completed", "packet.failed"], secret=secret)
+        webhook = WebhookCreate(
+            url=url,
+            events=events or ["packet.created", "packet.claimed", "packet.completed", "packet.failed"],
+            secret=secret,
+        )
         data = self._request("POST", "/hooks", json_data=webhook.to_dict())
         return WebhookResponse.from_dict(data)
 
@@ -452,6 +488,22 @@ class HandoffRailClient:
             webhook_id: The webhook UUID.
         """
         self._request("DELETE", f"/hooks/{webhook_id}")
+
+    def list_webhook_deliveries(
+        self,
+        webhook_id: str,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List delivery history for one webhook."""
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if status:
+            params["status"] = status
+
+        data = self._request("GET", f"/hooks/{webhook_id}/deliveries", params=params)
+        return data if isinstance(data, list) else []
 
     # ── Batch Operations ───────────────────────────────────────────────────────
 

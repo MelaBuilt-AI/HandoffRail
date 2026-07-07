@@ -35,14 +35,17 @@ import type {
   PacketCreate,
   PacketResponse,
   PacketListResponse,
+  AuditLogResponse,
   PacketUpdate,
   PacketHistoryResponse,
   ChainHandoffRequest,
   WebhookResponse,
   ListPacketsOptions,
+  ListAuditOptions,
   ClaimPacketOptions,
   HitlRespondOptions,
   RegisterWebhookOptions,
+  WebhookDelivery,
   BatchCreateResponse,
   BatchClaimOptions,
   BatchClaimResponse,
@@ -408,9 +411,26 @@ export class HandoffRailClient {
     if (options?.priority) params.priority = options.priority;
     if (options?.created_after) params.created_after = options.created_after;
     if (options?.created_before) params.created_before = options.created_before;
+    if (options?.cursor) params.cursor = options.cursor;
 
     const data = this._request('GET', '/packets', { params });
     return this._toPacketListResponse(data);
+  }
+
+  /** List structured audit log entries. */
+  listAuditLog(options?: ListAuditOptions): AuditLogResponse {
+    const params: Record<string, string | number | undefined> = {
+      limit: options?.limit ?? 50,
+      offset: options?.offset ?? 0,
+    };
+    if (options?.actor) params.actor = options.actor;
+    if (options?.action) params.action = options.action;
+    if (options?.packet_id) params.packet_id = options.packet_id;
+    if (options?.created_after) params.created_after = options.created_after;
+    if (options?.created_before) params.created_before = options.created_before;
+
+    const data = this._request('GET', '/audit', { params });
+    return data as unknown as AuditLogResponse;
   }
 
   /** Claim a packet for processing. */
@@ -512,6 +532,21 @@ export class HandoffRailClient {
   /** Deactivate (soft-delete) a webhook. */
   deleteWebhook(webhookId: string): void {
     this._request('DELETE', `/hooks/${encodeURIComponent(webhookId)}`);
+  }
+
+  /** List delivery history for one webhook. */
+  listWebhookDeliveries(
+    webhookId: string,
+    options?: { status?: string; limit?: number; offset?: number },
+  ): WebhookDelivery[] {
+    const params: Record<string, string | number | undefined> = {
+      limit: options?.limit ?? 50,
+      offset: options?.offset ?? 0,
+    };
+    if (options?.status) params.status = options.status;
+
+    const data = this._request('GET', `/hooks/${encodeURIComponent(webhookId)}/deliveries`, { params });
+    return Array.isArray(data) ? (data as unknown as WebhookDelivery[]) : [];
   }
 
   // ── Batch Operations ───────────────────────────────────────────────────
