@@ -923,3 +923,575 @@ class TestPacketSizeLimit:
 
         # Check that the constant is 256KB
         assert MAX_BODY_SIZE == 256 * 1024
+
+
+# ── search command ────────────────────────────────────────────────────────
+
+
+class TestSearchCommand:
+    """Tests for the 'search' CLI command."""
+
+    def _make_search_results(self, count=2):
+        """Create a sample PacketListResponse for search testing."""
+        packets = []
+        for i in range(count):
+            pkt = _make_packet_response(
+                id=f"550e8400-e29b-41d4-a716-44665544000{i}",
+                context={"summary": f"Search result {i} about error handling", "conversation_state": [], "artifacts": [], "custom": {}},
+            )
+            packets.append(pkt)
+        return PacketListResponse(packets=packets, total=count, limit=20, offset=0)
+
+    def test_search_table(self):
+        """Search packets in table format."""
+        list_resp = self._make_search_results()
+        mock_client = _mock_client()
+        mock_client.search_packets.return_value = list_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "search", "error handling",
+            ])
+
+        assert result.exit_code == 0, f"Exit code {result.exit_code}, output: {result.output}"
+        assert "Search result" in result.output
+        mock_client.search_packets.assert_called_once()
+        args, kwargs = mock_client.search_packets.call_args
+        assert "error handling" in args
+
+    def test_search_json(self):
+        """Search packets in JSON format."""
+        list_resp = self._make_search_results(count=1)
+        mock_client = _mock_client()
+        mock_client.search_packets.return_value = list_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "search", "error",
+                "--format", "json",
+            ])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["total"] == 1
+
+    def test_search_empty(self):
+        """Search with no matches should show 'No matching packets'."""
+        list_resp = PacketListResponse(packets=[], total=0, limit=20, offset=0)
+        mock_client = _mock_client()
+        mock_client.search_packets.return_value = list_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "search", "nonexistent",
+            ])
+
+        assert result.exit_code == 0
+        assert "no matching" in result.output.lower()
+
+    def test_search_too_short_query(self):
+        """Search with a single-character query should fail."""
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "--api-key", "test-key",
+            "search", "x",
+        ])
+        assert result.exit_code != 0
+        assert "at least 2 characters" in result.output.lower()
+
+    def test_search_with_filters(self):
+        """Search with status and priority filters."""
+        list_resp = PacketListResponse(packets=[], total=0, limit=20, offset=0)
+        mock_client = _mock_client()
+        mock_client.search_packets.return_value = list_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "search", "test query",
+                "--status", "created",
+                "--priority", "high",
+                "--limit", "5",
+            ])
+
+        assert result.exit_code == 0
+        mock_client.search_packets.assert_called_once()
+        args, kwargs = mock_client.search_packets.call_args
+        assert "test query" in args
+
+
+# ── hooks list command ────────────────────────────────────────────────────
+
+
+class TestHooksListCommand:
+    """Tests for the 'hooks list' CLI command."""
+
+    def _make_webhook_response(self, **overrides):
+        """Create a sample WebhookResponse for testing."""
+        from handoffrail.sdk.models import WebhookResponse
+        defaults = {
+            "id": "wh-001",
+            "url": "https://example.com/webhook",
+            "events": ["packet.created", "packet.completed"],
+            "tenant_id": "tenant-1",
+            "active": True,
+            "created_at": "2025-01-01T00:00:00Z",
+        }
+        defaults.update(overrides)
+        return WebhookResponse.from_dict(defaults)
+
+    def test_hooks_list_table(self):
+        """List webhooks in table format."""
+        hooks = [
+            self._make_webhook_response(id="wh-001", url="https://hooks.example.com/a"),
+            self._make_webhook_response(id="wh-002", url="https://hooks.example.com/b", active=False),
+        ]
+        mock_client = _mock_client()
+        mock_client.list_webhooks.return_value = hooks
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "hooks", "list",
+            ])
+
+        assert result.exit_code == 0, f"Exit code {result.exit_code}, output: {result.output}"
+        assert "wh-001" in result.output
+        assert "wh-002" in result.output
+        assert "hooks.example.com" in result.output
+        # Active indicator
+        assert "\u2713" in result.output  # ✓
+
+    def test_hooks_list_json(self):
+        """List webhooks in JSON format."""
+        hooks = [self._make_webhook_response(id="wh-001")]
+        mock_client = _mock_client()
+        mock_client.list_webhooks.return_value = hooks
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "hooks", "list",
+                "--format", "json",
+            ])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert len(output) == 1
+        assert output[0]["id"] == "wh-001"
+
+    def test_hooks_list_empty(self):
+        """List webhooks with no hooks should show 'No webhooks'."""
+        mock_client = _mock_client()
+        mock_client.list_webhooks.return_value = []
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "hooks", "list",
+            ])
+
+        assert result.exit_code == 0
+        assert "no webhooks" in result.output.lower()
+
+    def test_hooks_list_error(self):
+        """List webhooks with server error should show error."""
+        mock_client = _mock_client()
+        mock_client.list_webhooks.side_effect = ServerError("Server error", status_code=500)
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "hooks", "list",
+            ])
+
+        assert result.exit_code != 0
+        assert "server error" in result.output.lower()
+
+
+# ── keys commands ─────────────────────────────────────────────────────────
+
+
+class TestKeysCreateCommand:
+    """Tests for the 'keys create' CLI command."""
+
+    def _make_key_response(self, **overrides):
+        """Create a sample ApiKeyResponse for testing."""
+        from handoffrail.sdk.models import ApiKeyResponse
+        defaults = {
+            "id": "key-001",
+            "name": "prod-key",
+            "key_prefix": "hr_abcDEF",
+            "tenant_id": "tenant-1",
+            "revoked": False,
+            "created_at": "2025-01-01T00:00:00Z",
+            "key": "hr_abcDEFghijklmnopqrstuvwx",
+        }
+        defaults.update(overrides)
+        return ApiKeyResponse.from_dict(defaults)
+
+    def test_keys_create_table(self):
+        """Create API key in table format."""
+        key_resp = self._make_key_response()
+        mock_client = _mock_client()
+        mock_client.create_api_key.return_value = key_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "admin-key",
+                "keys", "create",
+                "--name", "prod-key",
+            ])
+
+        assert result.exit_code == 0, f"Exit code {result.exit_code}, output: {result.output}"
+        assert "key-001" in result.output
+        assert "prod-key" in result.output
+        assert "hr_abcDEF" in result.output
+        mock_client.create_api_key.assert_called_once_with(name="prod-key", tenant_id=None)
+
+    def test_keys_create_json(self):
+        """Create API key in JSON format."""
+        key_resp = self._make_key_response()
+        mock_client = _mock_client()
+        mock_client.create_api_key.return_value = key_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "admin-key",
+                "keys", "create",
+                "--name", "prod-key",
+                "--format", "json",
+            ])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["id"] == "key-001"
+        assert output["name"] == "prod-key"
+        assert output["key"] == "hr_abcDEFghijklmnopqrstuvwx"
+
+    def test_keys_create_missing_name(self):
+        """Create API key without --name should fail."""
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "--api-key", "admin-key",
+            "keys", "create",
+            # Missing --name
+        ])
+        assert result.exit_code != 0
+        assert "name" in result.output.lower()
+
+    def test_keys_create_with_tenant(self):
+        """Create API key with tenant ID."""
+        key_resp = self._make_key_response()
+        mock_client = _mock_client()
+        mock_client.create_api_key.return_value = key_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "admin-key",
+                "keys", "create",
+                "--name", "tenant-key",
+                "--tenant-id", "tenant-2",
+                "--format", "json",
+            ])
+
+        assert result.exit_code == 0
+        mock_client.create_api_key.assert_called_once_with(name="tenant-key", tenant_id="tenant-2")
+
+
+class TestKeysListCommand:
+    """Tests for the 'keys list' CLI command."""
+
+    def _make_key(self, **overrides):
+        """Create a sample ApiKeyResponse for list testing."""
+        from handoffrail.sdk.models import ApiKeyResponse
+        defaults = {
+            "id": "key-001",
+            "name": "prod-key",
+            "key_prefix": "hr_abcDEF",
+            "tenant_id": "tenant-1",
+            "revoked": False,
+            "created_at": "2025-01-01T00:00:00Z",
+            "key": None,  # Key value not shown on list
+        }
+        defaults.update(overrides)
+        return ApiKeyResponse.from_dict(defaults)
+
+    def test_keys_list_table(self):
+        """List API keys in table format."""
+        keys = [
+            self._make_key(id="key-001", name="prod-key", key_prefix="hr_abc"),
+            self._make_key(id="key-002", name="dev-key", key_prefix="hr_def", revoked=True),
+        ]
+        mock_client = _mock_client()
+        mock_client.list_api_keys.return_value = keys
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "admin-key",
+                "keys", "list",
+            ])
+
+        assert result.exit_code == 0, f"Exit code {result.exit_code}, output: {result.output}"
+        assert "key-001" in result.output
+        assert "key-002" in result.output
+        assert "prod-key" in result.output
+        assert "dev-key" in result.output
+
+    def test_keys_list_json(self):
+        """List API keys in JSON format."""
+        keys = [self._make_key(id="key-001", key_prefix="hr_abc")]
+        mock_client = _mock_client()
+        mock_client.list_api_keys.return_value = keys
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "admin-key",
+                "keys", "list",
+                "--format", "json",
+            ])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert len(output) == 1
+        assert output[0]["id"] == "key-001"
+        # Key value should not be in list response
+        assert output[0].get("key") is None
+
+    def test_keys_list_empty(self):
+        """List keys with no keys should show 'No API keys'."""
+        mock_client = _mock_client()
+        mock_client.list_api_keys.return_value = []
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "admin-key",
+                "keys", "list",
+            ])
+
+        assert result.exit_code == 0
+        assert "no api keys" in result.output.lower()
+
+    def test_keys_list_error(self):
+        """List keys with auth error should show error."""
+        mock_client = _mock_client()
+        mock_client.list_api_keys.side_effect = AuthenticationError("Invalid API key")
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "bad-key",
+                "keys", "list",
+            ])
+
+        assert result.exit_code != 0
+        assert "authentication" in result.output.lower()
+
+
+# ── Subcommand group routing ──────────────────────────────────────────────
+
+
+class TestSubcommandGroups:
+    """Tests that subcommand groups route correctly."""
+
+    def test_packets_group_exists(self):
+        """The 'packets' group should be registered."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["packets", "--help"])
+        assert result.exit_code == 0
+        assert "list" in result.output
+        assert "create" in result.output
+        assert "get" in result.output
+        assert "claim" in result.output
+        assert "search" in result.output
+
+    def test_packets_list_works(self):
+        """handoffrail packets list should work like handoffrail list."""
+        list_resp = PacketListResponse(packets=[], total=0, limit=20, offset=0)
+        mock_client = _mock_client()
+        mock_client.list_packets.return_value = list_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "packets", "list",
+            ])
+
+        assert result.exit_code == 0
+        mock_client.list_packets.assert_called_once()
+
+    def test_packets_create_works(self):
+        """handoffrail packets create should work like handoffrail create."""
+        mock_resp = _make_packet_response()
+        mock_client = _mock_client()
+        mock_client.create_packet.return_value = mock_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "packets", "create",
+                "--source-id", "agent-1",
+                "--source-name", "SourceBot",
+                "--target-id", "agent-2",
+                "--target-name", "TargetBot",
+                "--summary", "Test via packets group",
+                "--format", "json",
+            ])
+
+        assert result.exit_code == 0, f"Exit code {result.exit_code}, output: {result.output}"
+        output = json.loads(result.output)
+        assert output["id"] == "550e8400-e29b-41d4-a716-446655440000"
+
+    def test_packets_search_works(self):
+        """handoffrail packets search should work like handoffrail search."""
+        list_resp = PacketListResponse(packets=[], total=0, limit=20, offset=0)
+        mock_client = _mock_client()
+        mock_client.search_packets.return_value = list_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "packets", "search", "test query",
+            ])
+
+        assert result.exit_code == 0
+        mock_client.search_packets.assert_called_once()
+
+    def test_hooks_group_exists(self):
+        """The 'hooks' group should be registered."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["hooks", "--help"])
+        assert result.exit_code == 0
+        assert "list" in result.output
+
+    def test_keys_group_exists(self):
+        """The 'keys' group should be registered."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["keys", "--help"])
+        assert result.exit_code == 0
+        assert "create" in result.output
+        assert "list" in result.output
+
+
+# ── Completion command ────────────────────────────────────────────────────
+
+
+class TestCompletionCommand:
+    """Tests for the 'completion' CLI command."""
+
+    def test_completion_bash(self):
+        """Generate bash completion script."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["completion", "bash"])
+        assert result.exit_code == 0, f"Exit code {result.exit_code}, output: {result.output}"
+        assert "complete" in result.output or "_HANDOFFRAIL_COMPLETE" in result.output
+
+    def test_completion_zsh(self):
+        """Generate zsh completion script."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["completion", "zsh"])
+        assert result.exit_code == 0
+        assert "compdef" in result.output or "_HANDOFFRAIL_COMPLETE" in result.output
+
+    def test_completion_fish(self):
+        """Generate fish completion script."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["completion", "fish"])
+        assert result.exit_code == 0
+        assert "complete" in result.output or "_HANDOFFRAIL_COMPLETE" in result.output
+
+    def test_completion_invalid_shell(self):
+        """Completion with invalid shell should fail."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["completion", "invalid"])
+        assert result.exit_code != 0
+
+
+# ── Config file support ───────────────────────────────────────────────────
+
+
+class TestConfigFile:
+    """Tests for config file loading (~/.handoffrail.toml)."""
+
+    def test_load_config_no_file(self):
+        """load_config should return empty dict when no config file exists."""
+        from cli.config import load_config
+        # The test environment shouldn't have ~/.handoffrail.toml
+        result = load_config()
+        assert isinstance(result, dict)
+
+    def test_parse_valid_config(self, tmp_path):
+        """Parse a valid TOML config file."""
+        from cli.config import CONFIG_PATH
+        import tomllib
+
+        # Create a temp config file
+        config_data = {
+            "handoffrail": {
+                "server_url": "http://custom:9090/api/v1",
+                "api_key": "cfg-api-key-12345",
+            }
+        }
+        # Write to a temp file and test parsing manually
+        config_file = tmp_path / ".handoffrail.toml"
+        config_file.write_text('''
+[handoffrail]
+server_url = "http://custom:9090/api/v1"
+api_key = "cfg-api-key-12345"
+''')
+
+        with open(config_file, "rb") as f:
+            data = tomllib.load(f)
+        hr_cfg = data.get("handoffrail", {})
+        assert hr_cfg["server_url"] == "http://custom:9090/api/v1"
+        assert hr_cfg["api_key"] == "cfg-api-key-12345"
+
+    def test_parse_config_partial(self, tmp_path):
+        """Parse a config with only server_url."""
+        import tomllib
+
+        config_file = tmp_path / ".handoffrail.toml"
+        config_file.write_text('''
+[handoffrail]
+server_url = "http://partial:8080/api/v1"
+''')
+
+        with open(config_file, "rb") as f:
+            data = tomllib.load(f)
+        hr_cfg = data.get("handoffrail", {})
+        assert hr_cfg["server_url"] == "http://partial:8080/api/v1"
+        assert "api_key" not in hr_cfg
+
+    def test_invalid_config_handled(self, tmp_path):
+        """Invalid config file should not crash."""
+        from cli.config import CONFIG_PATH
+
+        # Monkey-patch CONFIG_PATH to a nonexistent path
+        import cli.config as cfg_module
+        original_path = cfg_module.CONFIG_PATH
+        try:
+            cfg_module.CONFIG_PATH = tmp_path / "nonexistent.toml"
+            result = cfg_module.load_config()
+            assert result == {}
+        finally:
+            cfg_module.CONFIG_PATH = original_path

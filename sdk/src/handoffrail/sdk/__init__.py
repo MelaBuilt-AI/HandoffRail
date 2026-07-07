@@ -13,6 +13,8 @@ from handoffrail.sdk.exceptions import (
     ValidationError,
 )
 from handoffrail.sdk.models import (
+    ApiKeyCreate,
+    ApiKeyResponse,
     AuditLogResponse,
     BatchClaimRequest,
     BatchClaimResponse,
@@ -39,6 +41,8 @@ __all__ = [
     "HandoffRailClient",
     "AsyncHandoffRailClient",
     # Models
+    "ApiKeyCreate",
+    "ApiKeyResponse",
     "PacketCreate",
     "PacketResponse",
     "PacketListResponse",

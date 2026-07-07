@@ -33,10 +33,12 @@ from handoffrail.sdk.models import (
     BatchCompleteRequest,
     BatchCompleteResponse,
     BatchCreateResponse,
-    ChainHandoffRequest,
-    HitlRespondRequest,
-    PacketClaim,
-    PacketCreate,
+   ChainHandoffRequest,
+   HitlRespondRequest,
+    ApiKeyCreate,
+    ApiKeyResponse,
+   PacketClaim,
+   PacketCreate,
     PacketHistoryResponse,
     PacketListResponse,
     PacketResponse,
@@ -452,3 +454,28 @@ class AsyncHandoffRailClient:
             params.update(options.to_params())
         data = await self._request("GET", "/packets/search", params=params)
         return PacketListResponse.from_dict(data)
+
+    # ── API Keys ───────────────────────────────────────────────────────────────
+
+    async def create_api_key(self, *, name: str, tenant_id: str | None = None) -> ApiKeyResponse:
+        """Create a new API key.
+
+        Args:
+            name: A human-readable name for the key.
+            tenant_id: Optional tenant ID (defaults to current key's tenant).
+
+        Returns:
+            The created API key response (includes the plain key value).
+        """
+        payload = ApiKeyCreate(name=name, tenant_id=tenant_id)
+        data = await self._request("POST", "/keys", json_data=payload.to_dict())
+        return ApiKeyResponse.from_dict(data)
+
+    async def list_api_keys(self) -> list[ApiKeyResponse]:
+        """List all API keys for the current tenant.
+
+        Returns:
+            List of API key responses (key values are not shown).
+        """
+        data = await self._request("GET", "/keys")
+        return [ApiKeyResponse.from_dict(k) for k in data]

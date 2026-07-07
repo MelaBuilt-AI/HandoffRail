@@ -655,3 +655,39 @@ class SearchOptions(BaseModel):
         if self.priority:
             params["priority"] = self.priority
         return params
+
+
+# ── API Keys ─────────────────────────────────────────────────────────────────────
+
+
+class ApiKeyCreate(BaseModel):
+    """Request body for creating a new API key."""
+
+    name: str
+    tenant_id: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ApiKeyCreate:
+        return cls.model_validate(data)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", exclude_none=True)
+
+
+class ApiKeyResponse(BaseModel):
+    """Response for an API key (includes the plain key only on creation)."""
+
+    id: str
+    name: str
+    key_prefix: str
+    tenant_id: str
+    revoked: bool
+    created_at: datetime
+    key: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ApiKeyResponse:
+        return cls.model_validate(data)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", exclude_none=True)
