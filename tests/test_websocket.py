@@ -4,8 +4,11 @@ Tests the ConnectionManager, RedisPubSubManager, WebSocket endpoint,
 event publishing from packet endpoints, and tier-gated connection limits.
 """
 
+import asyncio
 import json
 from unittest.mock import AsyncMock
+
+import httpx
 
 import pytest
 import pytest_asyncio
@@ -432,6 +435,135 @@ class TestWebSocketIntegration:
         reset_pubsub_manager()
 
 
+# ── SSEManager Tests ──────────────────────────────────────────────────────────
+
+
+class TestSSEManager:
+    """Test the SSEManager (Server-Sent Events connection manager)."""
+
+    def setup_method(self):
+        from app.services.websocket import SSEManager, reset_sse_manager
+        reset_sse_manager()
+        self.manager = SSEManager()
+
+    def teardown_method(self):
+        from app.services.websocket import reset_sse_manager
+        reset_sse_manager()
+
+    @pytest.mark.asyncio
+    async def test_connect_and_disconnect(self):
+        """Creating an SSE connection should return a connection ID."""
+        conn_id = await self.manager.connect(tenant_id="tenant-a")
+        assert conn_id is not None
+        assert self.manager.active_connection_count == 1
+
+        await self.manager.disconnect(conn_id)
+        assert self.manager.active_connection_count == 0
+
+    @pytest.mark.asyncio
+    async def test_multiple_connections_per_tenant(self):
+        """SSE allows multiple connections per tenant (unlike WebSocket tier limits)."""
+        conn1 = await self.manager.connect(tenant_id="tenant-a")
+        conn2 = await self.manager.connect(tenant_id="tenant-a")
+        conn3 = await self.manager.connect(tenant_id="tenant-b")
+
+        assert self.manager.active_connection_count == 3
+
+        await self.manager.disconnect(conn1)
+        assert self.manager.active_connection_count == 2
+
+    @pytest.mark.asyncio
+    async def test_broadcast_to_all(self):
+        """Broadcasting without tenant_id should reach all connections."""
+        conn1 = await self.manager.connect(tenant_id="tenant-a")
+        conn2 = await self.manager.connect(tenant_id="tenant-b")
+
+        event = {"type": "packet.created", "packet_id": "p-1", "data": {"status": "created"}}
+        await self.manager.broadcast(event)
+
+        c1 = self.manager._connections[conn1]
+        c2 = self.manager._connections[conn2]
+
+        # Both queues should have the event
+        msg1 = await asyncio.wait_for(c1.queue.get(), timeout=1.0)
+        msg2 = await asyncio.wait_for(c2.queue.get(), timeout=1.0)
+
+        assert msg1 is not None
+        assert msg2 is not None
+        assert json.loads(msg1)["type"] == "packet.created"
+        assert json.loads(msg2)["type"] == "packet.created"
+
+    @pytest.mark.asyncio
+    async def test_broadcast_tenant_filtering(self):
+        """Broadcasting with tenant_id should only reach that tenant."""
+        conn1 = await self.manager.connect(tenant_id="tenant-a")
+        conn2 = await self.manager.connect(tenant_id="tenant-b")
+
+        event = {"type": "packet.created", "packet_id": "p-1", "data": {"status": "created"}}
+        await self.manager.broadcast(event, tenant_id="tenant-a")
+
+        c1 = self.manager._connections[conn1]
+        c2 = self.manager._connections[conn2]
+
+        # tenant-a should receive
+        msg1 = await asyncio.wait_for(c1.queue.get(), timeout=1.0)
+        assert json.loads(msg1)["type"] == "packet.created"
+
+        # tenant-b should NOT receive (queue empty)
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(c2.queue.get(), timeout=0.5)
+
+    @pytest.mark.asyncio
+    async def test_subscription_filtering(self):
+        """Subscriptions should filter which events reach a connection."""
+        conn_id = await self.manager.connect(tenant_id="default")
+        await self.manager.subscribe(conn_id, "status:completed")
+
+        # Non-matching event should not be delivered
+        event1 = {"type": "packet.created", "packet_id": "p-1", "data": {"status": "created"}}
+        await self.manager.broadcast(event1)
+
+        conn = self.manager._connections[conn_id]
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(conn.queue.get(), timeout=0.3)
+
+        # Matching event should be delivered
+        event2 = {"type": "packet.completed", "packet_id": "p-2", "data": {"status": "completed"}}
+        await self.manager.broadcast(event2)
+
+        msg = await asyncio.wait_for(conn.queue.get(), timeout=1.0)
+        assert json.loads(msg)["type"] == "packet.completed"
+
+    @pytest.mark.asyncio
+    async def test_disconnect_sends_sentinel(self):
+        """Disconnecting should send None sentinel to unblock the generator."""
+        conn_id = await self.manager.connect(tenant_id="default")
+        await self.manager.disconnect(conn_id)
+
+        conn = self.manager._connections.get(conn_id)
+        assert conn is None  # Removed from registry
+
+    @pytest.mark.asyncio
+    async def test_subscribe_then_broadcast(self):
+        """Subscribe after connect, then broadcast matching event."""
+        conn_id = await self.manager.connect(tenant_id="default")
+        await self.manager.subscribe(conn_id, "agent:agent-01")
+
+        event = {
+            "type": "packet.created",
+            "packet_id": "p-1",
+            "data": {
+                "status": "created",
+                "metadata": {"source_agent": {"id": "agent-01"}},
+            },
+        }
+        await self.manager.broadcast(event)
+
+        conn = self.manager._connections[conn_id]
+        msg = await asyncio.wait_for(conn.queue.get(), timeout=1.0)
+        assert json.loads(msg)["type"] == "packet.created"
+
+
 # ── Stats Endpoint Tests ────────────────────────────────────────────────────────
 
 
@@ -492,6 +624,12 @@ class TestStatsEndpoint:
         response = await client.get("/api/v1/stats")
         data = response.json()
         assert data["hitl_queue_depth"] == 1
+
+
+# ── SSE Integration Tests ──────────────────────────────────────────────────────
+
+
+
 
 
 # ── Dashboard Static Files ──────────────────────────────────────────────────────

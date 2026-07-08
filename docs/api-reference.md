@@ -428,6 +428,115 @@ Tenant-scoped packet lifecycle audit log, backed by the packet event trail.
 
 ---
 
+## Real-Time Events (WebSocket & SSE)
+
+HandoffRail provides two endpoints for real-time event streaming:
+
+- **WebSocket** (`/ws`) — Full-duplex bidirectional communication. Supports channel subscriptions, heartbeat, and auto-reconnect.
+- **SSE** (`/events`) — Server-Sent Events, unidirectional server-to-client streaming. Alternative when WebSocket is unavailable.
+
+Both endpoints are authenticated via the `api_key` query parameter. Events are broadcast to both WebSocket and SSE subscribers whenever packets are created, claimed, updated, completed, or otherwise modified.
+
+### Horizontal Scaling with Redis Pub/Sub
+
+In multi-instance deployments, the server uses Redis Pub/Sub to broadcast events across all instances:
+
+1. When a packet event occurs, `publish_event()` publishes to Redis channels and broadcasts locally.
+2. Each server instance subscribes to a Redis `handoffrail:events:all` channel.
+3. Incoming Redis events are relayed to both WebSocket and SSE connections in that instance.
+4. If Redis is unavailable, the server gracefully falls back to in-process event broadcasting (events only reach connections on the same instance).
+
+### `GET /events` — SSE Event Stream
+
+Server-Sent Events endpoint for environments where WebSocket is unavailable (e.g., behind proxies, load balancers, or CDNs without WebSocket support).
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `api_key` | string | No | API key for authentication (default: dev mode) |
+| `subscribe` | string | No | Channel to subscribe to (repeatable: `?subscribe=status:created&subscribe=agent:agent-01`) |
+
+**Channel Formats:**
+
+- `status:{status}` — Receive events for a specific packet status (e.g. `status:created`, `status:completed`)
+- `packet:{id}` — Receive events for a specific packet
+- `agent:{id}` — Receive events involving a specific agent
+
+If no `subscribe` parameter is provided, all events for the authenticated tenant are received.
+
+**Response:** `text/event-stream`
+
+```
+event: connected
+data: {"connection_id": "...", "message": "HandoffRail SSE connected"}
+
+event: packet.created
+data: {"type": "packet.created", "packet_id": "...", "data": {...}, "timestamp": "..."}
+
+event: ping
+data: {"timestamp": "2026-07-07T19:00:00Z"}
+```
+
+Heartbeat pings are sent every 30 seconds.
+
+**Python (httpx):**
+
+```python
+import asyncio
+import httpx
+import json
+
+async def listen_for_events():
+    async with httpx.AsyncClient() as client:
+        async with client.stream(
+            "GET",
+            "http://localhost:8080/events?api_key=sk-...&subscribe=status:created"
+        ) as response:
+            async for line in response.aiter_lines():
+                line = line.strip()
+                if line.startswith("data: "):
+                    event = json.loads(line[6:])
+                    if event["type"] == "packet.created":
+                        print(f"New packet: {event['packet_id']}")
+
+asyncio.run(listen_for_events())
+```
+
+**TypeScript / Browser:**
+
+```typescript
+const eventSource = new EventSource(
+  "http://localhost:8080/events?api_key=sk-...&subscribe=status:created"
+);
+
+eventSource.addEventListener("packet.created", (event) => {
+  const data = JSON.parse(event.data);
+  console.log("New packet:", data.packet_id);
+});
+```
+
+### Python SDK SSE Client
+
+```python
+from handoffrail_sdk import HandoffRailSSEClient
+
+async with HandoffRailSSEClient(
+    "http://localhost:8080",
+    api_key="sk-...",
+    subscribe=["status:created", "status:completed"],
+) as client:
+    client.on_packet_created = lambda e: print(f"New: {e['packet_id']}")
+    client.on_packet_completed = lambda e: print(f"Done: {e['packet_id']}")
+    await asyncio.sleep(60)
+```
+
+### Batch Event Publishing
+
+Batch operations (`POST /packets/batch`, `POST /packets/batch/claim`, `POST /packets/batch/complete`) now publish events to both WebSocket and SSE subscribers, just like their single-operation counterparts. Each successful packet in a batch triggers the appropriate event type (`packet.created`, `packet.claimed`, `packet.completed`).
+
+---
+
 ## API Key Endpoints
 
 ### `POST /keys` — Create API Key

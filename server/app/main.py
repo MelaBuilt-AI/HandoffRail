@@ -29,7 +29,7 @@ from app.routers import (
 from app.routers.metrics import PrometheusMiddleware
 from app.services.expiry import start_expiry_task
 from app.services.redis_pubsub import get_pubsub_manager
-from app.services.websocket import get_connection_manager, reset_connection_manager
+from app.services.websocket import get_connection_manager, get_sse_manager, reset_connection_manager
 
 logger = structlog.get_logger()
 
@@ -47,12 +47,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     pubsub = get_pubsub_manager(settings.redis_url)
     connected = await pubsub.connect()
     if connected:
-        # Wire Redis events to WebSocket connection manager
+        # Wire Redis events to both WebSocket and SSE connection managers
         manager = get_connection_manager()
+        sse_manager = get_sse_manager()
 
         async def on_redis_event(event: dict[str, Any]) -> None:
-            """Relay events from Redis to local WebSocket connections."""
+            """Relay events from Redis to local WebSocket and SSE connections."""
+            # Extract tenant_id from event for scoped broadcasting
+            event_data = event.get("data", {})
+            # Events from the general "all" channel don't carry tenant_id
+            # Tenant filtering is applied at the broadcast step
             await manager.broadcast(event)
+            await sse_manager.broadcast(event)
 
         pubsub.set_event_callback(on_redis_event)
         await pubsub.subscribe(["all"])

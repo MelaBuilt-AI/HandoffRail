@@ -11,6 +11,7 @@ import json
 import time
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 import structlog
 from fastapi import WebSocket
@@ -299,8 +300,125 @@ class ConnectionManager:
                 pass
 
 
-# ── Module-level singleton ──────────────────────────────────────────────────────
+class SSEConnection:
+    """Represents a single SSE client connection.
+
+    Each connection gets an async queue that the SSE endpoint reads from.
+    Events are pushed to the queue by the SSEManager when broadcast is called.
+    """
+
+    def __init__(
+        self,
+        connection_id: str,
+        tenant_id: str = "default",
+    ) -> None:
+        self.connection_id = connection_id
+        self.tenant_id = tenant_id
+        self.subscriptions = Subscription()
+        self.queue: asyncio.Queue[str | None] = asyncio.Queue()
+        self.connected_at = time.time()
+
+
+class SSEManager:
+    """Manages SSE (Server-Sent Events) connections with subscription filtering.
+
+    Each SSE connection gets an async queue. The publish_event function
+    pushes events to matching SSE connections in addition to WebSocket.
+    SSE is a unidirectional alternative to WebSocket for environments where
+    WebSocket is unavailable (e.g., behind certain proxies or load balancers).
+    """
+
+    def __init__(self) -> None:
+        self._connections: dict[str, SSEConnection] = {}
+        self._tenant_connections: dict[str, set[str]] = {}
+        self._lock = asyncio.Lock()
+
+    @property
+    def active_connection_count(self) -> int:
+        """Total number of active SSE connections."""
+        return len(self._connections)
+
+    async def connect(self, tenant_id: str = "default") -> str:
+        """Create a new SSE connection.
+
+        Returns:
+            A unique connection ID.
+        """
+        connection_id = str(uuid4())
+        conn = SSEConnection(connection_id=connection_id, tenant_id=tenant_id)
+
+        async with self._lock:
+            self._connections[connection_id] = conn
+            if tenant_id not in self._tenant_connections:
+                self._tenant_connections[tenant_id] = set()
+            self._tenant_connections[tenant_id].add(connection_id)
+
+        logger.info(
+            "sse_connected",
+            connection_id=connection_id,
+            tenant_id=tenant_id,
+        )
+        return connection_id
+
+    async def disconnect(self, connection_id: str) -> None:
+        """Remove an SSE connection and signal the event loop to stop."""
+        async with self._lock:
+            conn = self._connections.pop(connection_id, None)
+            if conn:
+                tenant_conns = self._tenant_connections.get(conn.tenant_id, set())
+                tenant_conns.discard(connection_id)
+                if not tenant_conns and conn.tenant_id in self._tenant_connections:
+                    del self._tenant_connections[conn.tenant_id]
+                # Send sentinel to unblock the generator
+                await conn.queue.put(None)
+
+                logger.info(
+                    "sse_disconnected",
+                    connection_id=connection_id,
+                    tenant_id=conn.tenant_id,
+                )
+
+    async def subscribe(self, connection_id: str, channel: str) -> None:
+        """Add a subscription filter for an SSE connection."""
+        async with self._lock:
+            conn = self._connections.get(connection_id)
+            if conn:
+                conn.subscriptions.add(channel)
+                logger.debug(
+                    "sse_subscribed",
+                    connection_id=connection_id,
+                    channel=channel,
+                )
+
+    async def broadcast(self, event: dict[str, Any], tenant_id: str | None = None) -> None:
+        """Push an event to all matching SSE connections.
+
+        If tenant_id is provided, only pushes to connections for that tenant.
+        """
+        async with self._lock:
+            # Collect matching connections
+            targets: list[SSEConnection] = []
+            for conn in self._connections.values():
+                if tenant_id and conn.tenant_id != tenant_id:
+                    continue
+                if conn.subscriptions.matches(event):
+                    targets.append(conn)
+
+        # Push to queues outside the lock
+        message = json.dumps(event, default=str)
+        for conn in targets:
+            try:
+                await conn.queue.put(message)
+            except Exception:
+                logger.debug(
+                    "sse_queue_failed",
+                    connection_id=conn.connection_id,
+                )
+
+
+# ── Module-level singletons ──────────────────────────────────────────────────────
 _manager: ConnectionManager | None = None
+_sse_manager: SSEManager | None = None
 
 
 def get_connection_manager() -> ConnectionManager:
@@ -315,3 +433,17 @@ def reset_connection_manager() -> None:
     """Reset the global ConnectionManager — useful for tests."""
     global _manager
     _manager = None
+
+
+def get_sse_manager() -> SSEManager:
+    """Get the global SSEManager instance (lazy singleton)."""
+    global _sse_manager
+    if _sse_manager is None:
+        _sse_manager = SSEManager()
+    return _sse_manager
+
+
+def reset_sse_manager() -> None:
+    """Reset the global SSEManager — useful for tests."""
+    global _sse_manager
+    _sse_manager = None

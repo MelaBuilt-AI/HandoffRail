@@ -473,6 +473,17 @@ async def batch_create_packets(
             if initial_status == "awaiting_human":
                 record_hitl_checkpoint(tenant_id=api_key.tenant_id)
 
+            # Broadcast event to all subscribers
+            await publish_event(
+                event_type="packet.created",
+                data={
+                    "status": initial_status,
+                    "metadata": metadata_dict,
+                },
+                packet_id=packet_id,
+                tenant_id=api_key.tenant_id,
+            )
+
             created.append(_packet_to_response(db_packet))
 
         except Exception as exc:
@@ -565,6 +576,18 @@ async def batch_claim_packets(
 
             logger.info("batch_packet_claimed", packet_id=str(packet_id), agent=payload.agent_id)
 
+            # Broadcast event to all subscribers
+            metadata = packet.get_metadata()
+            await publish_event(
+                event_type="packet.claimed",
+                data={
+                    "status": "claimed",
+                    "metadata": metadata,
+                },
+                packet_id=str(packet_id),
+                tenant_id=api_key.tenant_id,
+            )
+
             claimed.append(_packet_to_response(packet))
 
         except HTTPException as exc:
@@ -639,6 +662,18 @@ async def batch_complete_packets(
             await db.refresh(packet)
 
             logger.info("batch_packet_completed", packet_id=str(packet_id))
+
+            # Broadcast event to all subscribers
+            metadata = packet.get_metadata()
+            await publish_event(
+                event_type="packet.completed",
+                data={
+                    "status": "completed",
+                    "metadata": metadata,
+                },
+                packet_id=str(packet_id),
+                tenant_id=api_key.tenant_id,
+            )
 
             completed.append(_packet_to_response(packet))
 

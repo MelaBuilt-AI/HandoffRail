@@ -36,6 +36,9 @@ from handoffrail.sdk.models import (
 # WebSocket client — lazy import, requires websockets package
 # from handoffrail.sdk.ws_client import HandoffRailWSClient
 
+# SSE client — lazy import, requires httpx package
+# from handoffrail.sdk.sse_client import HandoffRailSSEClient
+
 __all__ = [
     # Client
     "HandoffRailClient",
@@ -72,6 +75,8 @@ __all__ = [
     "ConnectionError",
     # WebSocket
     "HandoffRailWSClient",
+    # SSE
+    "HandoffRailSSEClient",
 ]
 
 __version__ = "0.2.0"
@@ -88,6 +93,8 @@ def __getattr__(name: str):
         "CrewAIAdapter": "handoffrail.integrations.crewai",
         "HandoffRailCrewAITool": "handoffrail.integrations.crewai",
         "HandoffRailWSClient": "handoffrail.sdk.ws_client",
+        "HandoffRailSSEClient": "handoffrail.sdk.sse_client",
+
     }
     if name in integrations:
         import importlib

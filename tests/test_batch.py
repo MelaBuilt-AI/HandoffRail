@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -192,3 +194,132 @@ class TestBatchComplete:
         """Empty list should return 422."""
         resp = await client.post("/api/v1/packets/batch/complete", json={"packet_ids": []})
         assert resp.status_code == 422
+
+
+# ── Batch Event Publishing Tests ────────────────────────────────────────────────
+
+
+class TestBatchEventPublishing:
+    """Test that batch operations publish events to subscribers."""
+
+    @pytest.mark.asyncio
+    async def test_batch_create_publishes_events(self, client: AsyncClient):
+        """Batch create should publish packet.created events."""
+        from app.services.websocket import SSEManager, get_sse_manager, reset_sse_manager
+        reset_sse_manager()
+        sse = get_sse_manager()
+
+        # Connect an SSE listener
+        conn_id = await sse.connect(tenant_id="default")
+
+        # Create packets via batch
+        resp = await client.post("/api/v1/packets/batch", json={
+            "packets": [
+                _make_packet_payload(summary="Batch event test 1"),
+                _make_packet_payload(summary="Batch event test 2"),
+            ],
+        })
+        assert resp.status_code == 201
+        data = resp.json()
+        assert len(data["created"]) == 2
+
+        # Check that events were published to SSE
+        conn = sse._connections[conn_id]
+        msg1 = await asyncio.wait_for(conn.queue.get(), timeout=5.0)
+        msg2 = await asyncio.wait_for(conn.queue.get(), timeout=5.0)
+
+        event1 = json.loads(msg1)
+        event2 = json.loads(msg2)
+        assert event1["type"] == "packet.created"
+        assert event2["type"] == "packet.created"
+
+    @pytest.mark.asyncio
+    async def test_batch_claim_publishes_events(self, client: AsyncClient):
+        """Batch claim should publish packet.claimed events."""
+        from app.services.websocket import get_sse_manager, reset_sse_manager
+        reset_sse_manager()
+        sse = get_sse_manager()
+
+        # Connect an SSE listener
+        conn_id = await sse.connect(tenant_id="default")
+
+        # First create packets
+        create_resp = await client.post("/api/v1/packets/batch", json={
+            "packets": [
+                _make_packet_payload(summary="Batch claim event 1"),
+                _make_packet_payload(summary="Batch claim event 2"),
+            ],
+        })
+        created = create_resp.json()["created"]
+        packet_ids = [p["id"] for p in created]
+
+        # Drain create events from queue
+        conn = sse._connections[conn_id]
+        for _ in range(2):
+            await asyncio.wait_for(conn.queue.get(), timeout=5.0)
+
+        # Now batch claim
+        resp = await client.post("/api/v1/packets/batch/claim", json={
+            "packet_ids": packet_ids,
+            "agent_id": "claimer-01",
+            "agent_name": "ClaimerBot",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["claimed"]) == 2
+
+        # Check claim events were published
+        msg1 = await asyncio.wait_for(conn.queue.get(), timeout=5.0)
+        msg2 = await asyncio.wait_for(conn.queue.get(), timeout=5.0)
+
+        event1 = json.loads(msg1)
+        event2 = json.loads(msg2)
+        assert event1["type"] == "packet.claimed"
+        assert event2["type"] == "packet.claimed"
+
+    @pytest.mark.asyncio
+    async def test_batch_complete_publishes_events(self, client: AsyncClient):
+        """Batch complete should publish packet.completed events."""
+        from app.services.websocket import get_sse_manager, reset_sse_manager
+        reset_sse_manager()
+        sse = get_sse_manager()
+
+        # Connect an SSE listener
+        conn_id = await sse.connect(tenant_id="default")
+
+        # Create, claim, and move to in_progress
+        create_resp = await client.post("/api/v1/packets/batch", json={
+            "packets": [
+                _make_packet_payload(summary="Batch complete event 1"),
+            ],
+        })
+        pkt = create_resp.json()["created"][0]
+        pid = pkt["id"]
+
+        # Drain create event
+        conn = sse._connections[conn_id]
+        await asyncio.wait_for(conn.queue.get(), timeout=5.0)
+
+        # Claim
+        await client.post(f"/api/v1/packets/{pid}/claim", json={
+            "agent_id": "worker-01",
+            "agent_name": "WorkerBot",
+        })
+        await asyncio.wait_for(conn.queue.get(), timeout=5.0)  # Drain claim event
+
+        # Move to in_progress
+        await client.patch(f"/api/v1/packets/{pid}", json={"status": "in_progress"})
+        await asyncio.wait_for(conn.queue.get(), timeout=5.0)  # Drain in_progress event
+
+        # Now batch complete
+        resp = await client.post("/api/v1/packets/batch/complete", json={
+            "packet_ids": [pid],
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["completed"]) == 1
+
+        # Check complete event was published
+        msg = await asyncio.wait_for(conn.queue.get(), timeout=5.0)
+        event = json.loads(msg)
+        assert event["type"] == "packet.completed"
