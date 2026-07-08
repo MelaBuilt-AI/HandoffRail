@@ -19,7 +19,7 @@ from typing import Any
 try:
     from langchain_core.callbacks import BaseCallbackHandler
     from langchain_core.tools import BaseTool
-    from pydantic import BaseModel, Field
+    from pydantic import Field
 
     _LANGCHAIN_AVAILABLE = True
 except ImportError:
@@ -28,8 +28,7 @@ except ImportError:
 from handoffrail.integrations.base import BaseAdapter
 from handoffrail.sdk.client import HandoffRailClient
 from handoffrail.sdk.exceptions import HandoffRailError
-from handoffrail.sdk.models import PacketCreate, PacketContext, PacketUpdate
-from handoffrail.sdk.models import PacketResponse
+from handoffrail.sdk.models import PacketContext, PacketCreate, PacketResponse, PacketUpdate
 
 
 def _require_langchain() -> None:
@@ -454,7 +453,10 @@ if _LANGCHAIN_AVAILABLE:
                     if not packet_id:
                         return json.dumps({"error": "get requires packet_id"})
                     result = self.client.get_packet(packet_id)
-                    return json.dumps({"packet_id": str(result.id), "status": result.status.value if hasattr(result.status, "value") else str(result.status)})
+                    return json.dumps({
+                        "packet_id": str(result.id),
+                        "status": result.status.value if hasattr(result.status, "value") else str(result.status),
+                    })
 
                 else:
                     return json.dumps({"error": f"Unknown action: {action}. Use: create, claim, update, complete, get"})

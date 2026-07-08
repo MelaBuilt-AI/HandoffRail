@@ -54,8 +54,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         async def on_redis_event(event: dict[str, Any]) -> None:
             """Relay events from Redis to local WebSocket and SSE connections."""
-            # Extract tenant_id from event for scoped broadcasting
-            event_data = event.get("data", {})
             # Events from the general "all" channel don't carry tenant_id
             # Tenant filtering is applied at the broadcast step
             await manager.broadcast(event)

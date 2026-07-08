@@ -43,7 +43,7 @@ class RedisPubSubManager:
         try:
             import redis.asyncio as aioredis
 
-            self._redis = aioredis.from_url(self.redis_url, decode_responses=True)  # type: ignore[no-untyped-call]
+            self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
             # Test connection
             await self._redis.ping()
             self._connected = True

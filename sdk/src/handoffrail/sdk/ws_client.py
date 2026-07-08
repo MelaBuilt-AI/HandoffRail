@@ -7,11 +7,12 @@ and dispatches typed events to callback handlers.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import logging
-from typing import Any, Callable, Coroutine
+from collections.abc import Callable, Coroutine
+from typing import Any
 from urllib.parse import quote
-
 
 logger = logging.getLogger("handoffrail.ws")
 
@@ -138,9 +139,7 @@ class HandoffRailWSClient:
 
     async def connect(self) -> None:
         """Connect to the WebSocket server and start listening."""
-        try:
-            import websockets
-        except ImportError:
+        if importlib.util.find_spec("websockets") is None:
             raise ImportError(
                 "websockets package is required for WebSocket support. "
                 "Install it with: pip install handoffrail[ws]"

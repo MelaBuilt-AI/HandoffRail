@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.database import _init_fts, async_session, engine
 from app.main import create_app
 from app.middleware.auth import generate_api_key
-from app.middleware.rate_limit import (daily_handoff_counter, rate_limiter_registry, sliding_window_counter)
+from app.middleware.rate_limit import daily_handoff_counter, rate_limiter_registry, sliding_window_counter
 from app.models.db import ApiKey, Base, Tenant
 
 # Create test app with very high rate limits so tests don't get throttled

@@ -13,10 +13,6 @@ Test categories:
 
 from __future__ import annotations
 
-from uuid import uuid4
-
-import pytest
-
 
 class TestTenantIsolation:
     """Packets created in one tenant must not be visible in another tenant."""

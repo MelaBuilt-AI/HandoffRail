@@ -13,9 +13,9 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
 
-from app.models.db import Base, Tenant
+from app.models.db import Base
 
 # Detect database URL from environment or default to SQLite
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./handoffrail.db")
@@ -104,7 +104,7 @@ async def init_db() -> None:
         await _seed_default_tenant(conn)
 
 
-async def _init_fts(conn) -> None:
+async def _init_fts(conn: AsyncConnection) -> None:
     """Initialize full-text search tables/indexes.
 
     SQLite: creates an FTS5 virtual table with triggers to keep it in sync.
@@ -172,7 +172,7 @@ async def _init_fts(conn) -> None:
         """))
 
 
-async def _seed_default_tenant(conn) -> None:
+async def _seed_default_tenant(conn: AsyncConnection) -> None:
     """Seed the default tenant for dev mode if it doesn't exist.
 
     This is only used when tables are created from scratch (SQLite dev mode).

@@ -1013,7 +1013,12 @@ class TestSearchCommand:
         for i in range(count):
             pkt = _make_packet_response(
                 id=f"550e8400-e29b-41d4-a716-44665544000{i}",
-                context={"summary": f"Search result {i} about error handling", "conversation_state": [], "artifacts": [], "custom": {}},
+                context={
+                    "summary": f"Search result {i} about error handling",
+                    "conversation_state": [],
+                    "artifacts": [],
+                    "custom": {},
+                },
             )
             packets.append(pkt)
         return PacketListResponse(packets=packets, total=count, limit=20, offset=0)
@@ -1518,16 +1523,8 @@ class TestConfigFile:
 
     def test_parse_valid_config(self, tmp_path):
         """Parse a valid TOML config file."""
-        from cli.config import CONFIG_PATH
         import tomllib
 
-        # Create a temp config file
-        config_data = {
-            "handoffrail": {
-                "server_url": "http://custom:9090/api/v1",
-                "api_key": "cfg-api-key-12345",
-            }
-        }
         # Write to a temp file and test parsing manually
         config_file = tmp_path / ".handoffrail.toml"
         config_file.write_text('''
@@ -1560,7 +1557,6 @@ server_url = "http://partial:8080/api/v1"
 
     def test_invalid_config_handled(self, tmp_path):
         """Invalid config file should not crash."""
-        from cli.config import CONFIG_PATH
 
         # Monkey-patch CONFIG_PATH to a nonexistent path
         import cli.config as cfg_module

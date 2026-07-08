@@ -12,7 +12,9 @@ This demonstrates:
 Prerequisites:
     pip install handoffrail-sdk
     # Start the server: uvicorn app.main:app --reload --port 8080
-    # Create an API key: curl -X POST http://localhost:8080/api/v1/keys -H "Content-Type: application/json" -d '{"name":"demo"}'
+    # Create an API key:
+    # curl -X POST http://localhost:8080/api/v1/keys \
+    #   -H "Content-Type: application/json" -d '{"name":"demo"}'
 
 Usage:
     python chain_handoff.py
@@ -80,7 +82,10 @@ def main():
                 ),
                 ContextEntry(
                     role="agent",
-                    content="That's a significant upgrade. I'll need manager approval for the pricing and the pending refund situation. Let me escalate this.",
+                    content=(
+                        "That's a significant upgrade. I'll need manager approval for the pricing "
+                        "and the pending refund situation. Let me escalate this."
+                    ),
                 ),
             ],
         ),
@@ -206,7 +211,10 @@ def main():
                 conversation_state=[
                     ContextEntry(
                         role="agent",
-                        content="Payment processed. Enterprise tier active for 50 seats. Refund of $500 issued to original payment method.",
+                        content=(
+                            "Payment processed. Enterprise tier active for 50 seats. "
+                            "Refund of $500 issued to original payment method."
+                        ),
                     ),
                 ],
             ),

@@ -455,7 +455,6 @@ async def release_daily_handoff_slot(tenant_id: str, tier: str) -> None:
     if unlimited or tier_quota.get("handoffs_per_day", 0) == 0:
         return
 
-    day_key = get_day_key()
     # For simplicity, just clear the in-memory cache — Redis counter will decrement on next check
     # In-memory: we don't decrement since it's the consumer
     pass

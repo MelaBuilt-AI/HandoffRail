@@ -11,12 +11,13 @@ WebSocket upgrades).
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import logging
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine
+from typing import Any
 from urllib.parse import urlencode
-
 
 logger = logging.getLogger("handoffrail.sse")
 
@@ -177,9 +178,7 @@ class HandoffRailSSEClient:
 
     async def connect(self) -> None:
         """Connect to the SSE endpoint and start listening."""
-        try:
-            import httpx
-        except ImportError:
+        if importlib.util.find_spec("httpx") is None:
             raise ImportError(
                 "httpx package is required for SSE support. "
                 "Install it with: pip install handoffrail[sse]"
@@ -208,7 +207,7 @@ class HandoffRailSSEClient:
                             )
                             if self.on_error:
                                 await self.on_error(
-                                    IOError(f"SSE connection failed: {response.status_code}")
+                                    OSError(f"SSE connection failed: {response.status_code}")
                                 )
                             if self._reconnect:
                                 await self._reconnect_wait()

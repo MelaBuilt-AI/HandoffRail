@@ -205,7 +205,7 @@ class TestBatchEventPublishing:
     @pytest.mark.asyncio
     async def test_batch_create_publishes_events(self, client: AsyncClient):
         """Batch create should publish packet.created events."""
-        from app.services.websocket import SSEManager, get_sse_manager, reset_sse_manager
+        from app.services.websocket import get_sse_manager, reset_sse_manager
         reset_sse_manager()
         sse = get_sse_manager()
 

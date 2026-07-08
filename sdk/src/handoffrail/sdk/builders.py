@@ -78,7 +78,14 @@ class PacketBuilder:
 
     # ── Agent setters ─────────────────────────────────────────────────────
 
-    def from_(self, agent_id: str, agent_name: str, *, framework: str | None = None, version: str | None = None) -> PacketBuilder:
+    def from_(
+        self,
+        agent_id: str,
+        agent_name: str,
+        *,
+        framework: str | None = None,
+        version: str | None = None,
+    ) -> PacketBuilder:
         """Set the source (sending) agent."""
         self._source_id = agent_id
         self._source_name = agent_name

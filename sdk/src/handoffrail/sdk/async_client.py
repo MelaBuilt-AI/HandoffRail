@@ -483,7 +483,14 @@ class AsyncHandoffRailClient:
         data = await self._request("GET", "/keys")
         return [ApiKeyResponse.from_dict(k) for k in data]
 
-    async def create_tenant(self, *, name: str, tier: str = "free", handoffs_per_day: int | None = None, max_api_keys: int | None = None) -> TenantResponse:
+    async def create_tenant(
+        self,
+        *,
+        name: str,
+        tier: str = "free",
+        handoffs_per_day: int | None = None,
+        max_api_keys: int | None = None,
+    ) -> TenantResponse:
         """Create a new tenant. Requires admin API key."""
         payload = TenantCreate(name=name, tier=tier, handoffs_per_day=handoffs_per_day, max_api_keys=max_api_keys)
         data = await self._request("POST", "/tenants", json_data=payload.to_dict())
@@ -499,7 +506,15 @@ class AsyncHandoffRailClient:
         data = await self._request("GET", f"/tenants/{tenant_id}")
         return TenantResponse.from_dict(data)
 
-    async def update_tenant(self, tenant_id: str, *, name: str | None = None, tier: str | None = None, handoffs_per_day: int | None = None, max_api_keys: int | None = None) -> TenantResponse:
+    async def update_tenant(
+        self,
+        tenant_id: str,
+        *,
+        name: str | None = None,
+        tier: str | None = None,
+        handoffs_per_day: int | None = None,
+        max_api_keys: int | None = None,
+    ) -> TenantResponse:
         """Update a tenant. Requires admin API key."""
         payload = TenantUpdate(name=name, tier=tier, handoffs_per_day=handoffs_per_day, max_api_keys=max_api_keys)
         data = await self._request("PATCH", f"/tenants/{tenant_id}", json_data=payload.to_dict())
@@ -513,4 +528,3 @@ class AsyncHandoffRailClient:
         """List all API keys for a specific tenant. Requires admin API key."""
         data = await self._request("GET", f"/tenants/{tenant_id}/keys")
         return [ApiKeyResponse.from_dict(k) for k in data]
-

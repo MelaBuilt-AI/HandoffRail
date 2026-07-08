@@ -10,11 +10,9 @@ existing single-tenant users.
 """
 from __future__ import annotations
 
-import uuid
-from datetime import UTC, datetime
+import sqlalchemy as sa
 
 from alembic import op
-import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "0002_tenants"

@@ -186,7 +186,11 @@ class CrewAIAdapter(BaseAdapter):
             "decisions": decisions,
             "source_agent": packet.metadata.source_agent.name,
             "source_agent_id": packet.metadata.source_agent.id,
-            "priority": packet.metadata.priority.value if hasattr(packet.metadata.priority, "value") else str(packet.metadata.priority),
+            "priority": (
+                packet.metadata.priority.value
+                if hasattr(packet.metadata.priority, "value")
+                else str(packet.metadata.priority)
+            ),
         }
 
         if packet.hitl and packet.hitl.required:

@@ -21,7 +21,7 @@ from fastapi.responses import StreamingResponse
 from app.middleware.auth import hash_key
 from app.models.db import ApiKey
 from app.services.redis_pubsub import get_pubsub_manager
-from app.services.websocket import ConnectionManager, SSEManager, get_connection_manager, get_sse_manager
+from app.services.websocket import ConnectionManager, get_connection_manager, get_sse_manager
 
 logger = structlog.get_logger()
 
@@ -233,7 +233,10 @@ async def sse_event_stream(
                 event_type="connected",
                 data=json.dumps({
                     "connection_id": connection_id,
-                    "message": "HandoffRail SSE connected. Subscribed channels: " + (", ".join(subscribe) if subscribe else "all"),
+                    "message": (
+                        "HandoffRail SSE connected. Subscribed channels: "
+                        + (", ".join(subscribe) if subscribe else "all")
+                    ),
                 }),
             )
 
@@ -268,7 +271,7 @@ async def sse_event_stream(
                         event_type=event_data.get("type", "event"),
                         data=message,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Timeout is normal — just loop to check disconnect and send keepalive
                     continue
 

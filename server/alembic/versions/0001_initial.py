@@ -1,7 +1,7 @@
 """Initial schema — all tables.
 
 Revision ID: 0001_initial
-Revises: 
+Revises:
 Create Date: 2026-06-26
 
 Creates all HandoffRail tables: packets, packet_events, webhooks,
@@ -9,8 +9,9 @@ api_keys, webhook_deliveries.
 """
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "0001_initial"

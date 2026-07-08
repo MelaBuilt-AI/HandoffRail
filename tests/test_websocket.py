@@ -8,8 +8,6 @@ import asyncio
 import json
 from unittest.mock import AsyncMock
 
-import httpx
-
 import pytest
 import pytest_asyncio
 from app.database import async_session, engine
@@ -464,8 +462,8 @@ class TestSSEManager:
     async def test_multiple_connections_per_tenant(self):
         """SSE allows multiple connections per tenant (unlike WebSocket tier limits)."""
         conn1 = await self.manager.connect(tenant_id="tenant-a")
-        conn2 = await self.manager.connect(tenant_id="tenant-a")
-        conn3 = await self.manager.connect(tenant_id="tenant-b")
+        await self.manager.connect(tenant_id="tenant-a")
+        await self.manager.connect(tenant_id="tenant-b")
 
         assert self.manager.active_connection_count == 3
 

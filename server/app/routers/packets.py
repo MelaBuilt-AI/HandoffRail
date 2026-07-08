@@ -735,7 +735,7 @@ async def search_packets(
 
     # Build filter conditions
     conditions = ["p.tenant_id = :tenant_id"]
-    params: dict = {"tenant_id": api_key.tenant_id, "q": q}
+    params: dict[str, Any] = {"tenant_id": api_key.tenant_id, "q": q}
 
     if status:
         conditions.append("p.status = :status")

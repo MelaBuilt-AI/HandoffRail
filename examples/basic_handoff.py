@@ -7,7 +7,9 @@ A simple two-agent handoff: SalesBot creates a packet, BillingBot claims it.
 Prerequisites:
     pip install handoffrail-sdk
     # Start the server: uvicorn app.main:app --reload --port 8080
-    # Create an API key: curl -X POST http://localhost:8080/api/v1/keys -H "Content-Type: application/json" -d '{"name":"demo"}'
+    # Create an API key:
+    # curl -X POST http://localhost:8080/api/v1/keys \
+    #   -H "Content-Type: application/json" -d '{"name":"demo"}'
 
 Usage:
     python basic_handoff.py
@@ -115,20 +117,7 @@ def main():
     # ── Step 3: BillingBot processes the action ─────────────────────────
     print("\n\n⚙️  Step 3: BillingBot processes the upgrade\n")
 
-    updated = client.update_packet(
-        packet.id,
-        PacketCreate(  # Using PacketUpdate would be more correct, simplified here
-            metadata=Metadata(
-                source_agent=AgentInfo(id="billing-01", name="BillingBot"),
-                target_agent=TargetAgentInfo(id="billing-01", name="BillingBot"),
-            ),
-            context=PacketContext(
-                summary="Payment processed. Customer upgraded to Business tier.",
-            ),
-        ).to_dict() if False else None,
-    )
-
-    # Simpler: just update status to in_progress
+    # Update status to in_progress
     from handoffrail.sdk.models import PacketUpdate
 
     in_progress = client.update_packet(
