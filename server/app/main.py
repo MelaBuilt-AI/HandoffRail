@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import init_db
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.rbac import RBACMiddleware
 from app.middleware.size_limit import RequestSizeLimitMiddleware
 from app.routers import (
     audit_router,
@@ -86,6 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 def create_app(
     tier_limits: dict[str, int] | None = None,
     rate_limit_per_minute: int | None = None,
+    disable_rbac: bool = False,
 ) -> FastAPI:
     """Application factory — creates and configures the FastAPI app."""
     settings = get_settings()
@@ -120,6 +122,10 @@ def create_app(
             rate_limit_per_minute if rate_limit_per_minute is not None else settings.rate_limit_per_minute
         ),
     )
+
+    # RBAC — role-based access control (skip if disabled, e.g. in tests)
+    if not disable_rbac:
+        app.add_middleware(RBACMiddleware)
 
     # Register routers
     app.include_router(audit_router)

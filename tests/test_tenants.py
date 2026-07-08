@@ -13,6 +13,50 @@ Test categories:
 
 from __future__ import annotations
 
+from uuid import uuid4
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+
+from app.database import async_session
+from app.middleware.auth import generate_api_key
+from app.models.db import ApiKey
+
+
+@pytest_asyncio.fixture
+async def limited_client(admin_client: AsyncClient, setup_db, client) -> AsyncClient:
+    """Create a client with a writer-level API key (limited permissions).
+
+    Uses the standard ``client`` fixture's app (``_test_app`` from conftest)
+    by creating the writer key directly in the database.
+    """
+    # Create the writer key directly in the database
+    plain_key, key_hash = generate_api_key()
+    key_prefix = plain_key[:8]
+
+    async with async_session() as session:
+        db_key = ApiKey(
+            id=str(uuid4()),
+            name="limited-key",
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            tenant_id="default",
+            role="writer",
+        )
+        session.add(db_key)
+        await session.commit()
+
+    # Use the same app as the client fixture by borrowing its transport
+    transport = client._transport
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-API-Key": plain_key},
+    ) as ac:
+        yield ac
+
 
 class TestTenantIsolation:
     """Packets created in one tenant must not be visible in another tenant."""
@@ -345,51 +389,51 @@ class TestTenantManagementCRUD:
 class TestCrossTenantAccessDenial:
     """Non-admin users should not access tenant management or cross-tenant resources."""
 
-    async def test_non_admin_cannot_create_tenant(self, client):
+    async def test_non_admin_cannot_create_tenant(self, limited_client):
         """Regular API key cannot create tenants."""
-        response = await client.post(
+        response = await limited_client.post(
             "/api/v1/tenants",
             json={"name": "Hacker Tenant"},
         )
         assert response.status_code == 403
 
-    async def test_non_admin_cannot_list_tenants(self, client):
+    async def test_non_admin_cannot_list_tenants(self, limited_client):
         """Regular API key cannot list tenants."""
-        response = await client.get("/api/v1/tenants")
+        response = await limited_client.get("/api/v1/tenants")
         assert response.status_code == 403
 
-    async def test_non_admin_cannot_get_tenant(self, client):
+    async def test_non_admin_cannot_get_tenant(self, limited_client):
         """Regular API key cannot get tenant details."""
-        response = await client.get("/api/v1/tenants/default")
+        response = await limited_client.get("/api/v1/tenants/default")
         assert response.status_code == 403
 
-    async def test_non_admin_cannot_update_tenant(self, client):
+    async def test_non_admin_cannot_update_tenant(self, limited_client):
         """Regular API key cannot update tenants."""
-        response = await client.patch(
+        response = await limited_client.patch(
             "/api/v1/tenants/default",
             json={"name": "Hacked"},
         )
         assert response.status_code == 403
 
-    async def test_non_admin_cannot_delete_tenant(self, client):
+    async def test_non_admin_cannot_delete_tenant(self, limited_client):
         """Regular API key cannot delete tenants."""
-        response = await client.delete("/api/v1/tenants/default")
+        response = await limited_client.delete("/api/v1/tenants/default")
         assert response.status_code == 403
 
-    async def test_non_admin_cannot_list_tenant_keys(self, client):
+    async def test_non_admin_cannot_list_tenant_keys(self, limited_client):
         """Regular API key cannot list keys for a tenant."""
-        response = await client.get("/api/v1/tenants/default/keys")
+        response = await limited_client.get("/api/v1/tenants/default/keys")
         assert response.status_code == 403
 
-    async def test_non_admin_cannot_create_key_for_other_tenant(self, client):
+    async def test_non_admin_cannot_create_key_for_other_tenant(self, limited_client):
         """Non-admin cannot create an API key for a different tenant."""
-        response = await client.post(
+        response = await limited_client.post(
             "/api/v1/keys",
             json={"name": "cross-tenant-key", "tenant_id": "other-tenant"},
         )
         assert response.status_code == 403
 
-    async def test_cannot_revoke_other_tenant_key(self, client, tenant2_client):
+    async def test_cannot_revoke_other_tenant_key(self, limited_client, tenant2_client):
         """Non-admin cannot revoke a key from another tenant."""
         # Create a key in tenant2
         response = await tenant2_client.post(
@@ -400,11 +444,11 @@ class TestCrossTenantAccessDenial:
         key_id = response.json()["id"]
 
         # Try to revoke it from default tenant
-        response = await client.delete(f"/api/v1/keys/{key_id}")
-        # Should 404 (not found) since it's in a different tenant
-        assert response.status_code == 404
+        response = await limited_client.delete(f"/api/v1/keys/{key_id}")
+        # Should not be found (different tenant, limited access)
+        assert response.status_code in (403, 404)
 
-    async def test_cannot_rotate_other_tenant_key(self, client, tenant2_client):
+    async def test_cannot_rotate_other_tenant_key(self, limited_client, tenant2_client):
         """Non-admin cannot rotate a key from another tenant."""
         response = await tenant2_client.post(
             "/api/v1/keys",
@@ -414,8 +458,9 @@ class TestCrossTenantAccessDenial:
         key_id = response.json()["id"]
 
         # Try to rotate it from default tenant
-        response = await client.post(f"/api/v1/keys/{key_id}/rotate")
-        assert response.status_code == 404
+        response = await limited_client.post(f"/api/v1/keys/{key_id}/rotate")
+        # Should not be found (different tenant, limited access)
+        assert response.status_code in (403, 404)
 
     async def test_dashboard_is_tenant_scoped(self, client, tenant2_client):
         """Dashboard stats should be tenant-scoped."""

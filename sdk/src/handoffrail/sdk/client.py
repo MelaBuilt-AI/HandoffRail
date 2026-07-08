@@ -636,17 +636,18 @@ class HandoffRailClient:
 
     # ── API Keys ───────────────────────────────────────────────────────────────
 
-    def create_api_key(self, *, name: str, tenant_id: str | None = None) -> ApiKeyResponse:
+    def create_api_key(self, *, name: str, tenant_id: str | None = None, role: str = "admin") -> ApiKeyResponse:
         """Create a new API key.
 
         Args:
             name: A human-readable name for the key.
             tenant_id: Optional tenant ID (defaults to current key's tenant).
+            role: The role for the key (admin, writer, reader, agent). Default "admin".
 
         Returns:
             The created API key response (includes the plain key value).
         """
-        payload = ApiKeyCreate(name=name, tenant_id=tenant_id)
+        payload = ApiKeyCreate(name=name, tenant_id=tenant_id, role=role)
         data = self._request("POST", "/keys", json_data=payload.to_dict())
         return ApiKeyResponse.from_dict(data)
 

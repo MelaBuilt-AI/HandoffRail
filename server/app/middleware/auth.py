@@ -75,15 +75,15 @@ async def get_api_key_from_request(
 async def require_admin(
     api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> ApiKey:
-    """Dependency that requires the authenticated API key to have admin privileges.
+    """Dependency that requires the authenticated API key to have admin role.
 
     Raises:
-        HTTPException 403: If the key is not an admin key.
+        HTTPException 403: If the key does not have an admin role.
     """
-    if not api_key.admin:
+    if api_key.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
+            detail="Admin role required",
         )
     return api_key
 
@@ -97,3 +97,29 @@ async def get_tenant_id(
     without needing the full ApiKey object.
     """
     return api_key.tenant_id
+
+
+async def require_role(min_role: str = "reader"):
+    """Factory that returns a dependency requiring a minimum role level.
+
+    Usage:
+        @router.get("/some-endpoint")
+        async def handler(api_key: ApiKey = Depends(require_role("writer"))):
+            ...
+
+    Raises:
+        HTTPException 403: If the key's role is insufficient.
+    """
+    from app.middleware.rbac import get_role_level
+
+    async def _dependency(
+        api_key: ApiKey = Depends(get_api_key_from_request),
+    ) -> ApiKey:
+        if get_role_level(api_key.role) < get_role_level(min_role):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions. Required role: {min_role}, current role: {api_key.role}",
+            )
+        return api_key
+
+    return _dependency

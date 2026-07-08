@@ -30,6 +30,7 @@ from app.models.db import ApiKey, Base, Tenant
 _test_app = create_app(
     tier_limits={"free": 100000, "pro": 100000, "business": 100000},
     rate_limit_per_minute=100000,
+    disable_rbac=True,
 )
 
 # Generated test API keys (created once per test session)

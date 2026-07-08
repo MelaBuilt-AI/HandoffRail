@@ -35,13 +35,26 @@ async def create_api_key(
     plain_key, key_hash = generate_api_key()
     key_prefix = plain_key[:8]  # e.g., "hr_abcdEF"
 
-    # Determine tenant_id — non-admin keys can only create keys for their own tenant
+    # Determine tenant_id — only admin keys can create keys for other tenants
     target_tenant_id = payload.tenant_id or _current_key.tenant_id
-    if payload.tenant_id and payload.tenant_id != _current_key.tenant_id and not _current_key.admin:
+    if payload.tenant_id and payload.tenant_id != _current_key.tenant_id and _current_key.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin keys can create keys for other tenants",
         )
+
+    # Determine role — only admin can create keys with arbitrary roles
+    if _current_key.role == "admin":
+        target_role = payload.role
+    else:
+        # Non-admin keys can only create keys with the same or lower role
+        from app.middleware.rbac import get_role_level, ROLE_HIERARCHY
+        current_level = get_role_level(_current_key.role)
+        requested_level = get_role_level(payload.role)
+        if requested_level > current_level:
+            target_role = "writer"  # default to writer for non-admin creation
+        else:
+            target_role = payload.role
 
     db_key = ApiKey(
         id=str(uuid4()),
@@ -49,7 +62,7 @@ async def create_api_key(
         key_hash=key_hash,
         key_prefix=key_prefix,
         tenant_id=target_tenant_id,
-        admin=payload.admin if _current_key.admin else False,
+        role=target_role,
     )
 
     db.add(db_key)
@@ -70,7 +83,7 @@ async def create_api_key(
         name=db_key.name,
         key_prefix=db_key.key_prefix,
         tenant_id=db_key.tenant_id,
-        admin=db_key.admin,
+        role=db_key.role,
         revoked=db_key.revoked,
         created_at=db_key.created_at,
         key=plain_key,  # Only shown on creation
@@ -97,7 +110,7 @@ async def list_api_keys(
             name=k.name,
             key_prefix=k.key_prefix,
             tenant_id=k.tenant_id,
-            admin=k.admin,
+            role=k.role,
             revoked=k.revoked,
             created_at=k.created_at,
             key=None,  # Never show key on list
@@ -129,8 +142,8 @@ async def revoke_api_key(
             detail=f"API key {key_id} not found",
         )
 
-    # Tenant scope check: can only revoke keys in your own tenant (unless admin)
-    if db_key.tenant_id != _current_key.tenant_id and not _current_key.admin:
+    # Tenant scope check: can only revoke keys in your own tenant (unless admin role)
+    if db_key.tenant_id != _current_key.tenant_id and _current_key.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"API key {key_id} not found",
@@ -181,8 +194,8 @@ async def rotate_api_key(
             detail=f"API key {key_id} not found",
         )
 
-    # Tenant scope check: can only rotate keys in your own tenant (unless admin)
-    if old_key.tenant_id != _current_key.tenant_id and not _current_key.admin:
+    # Tenant scope check: can only rotate keys in your own tenant (unless admin role)
+    if old_key.tenant_id != _current_key.tenant_id and _current_key.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"API key {key_id} not found",
@@ -205,7 +218,7 @@ async def rotate_api_key(
         key_prefix=key_prefix,
         tenant_id=old_key.tenant_id,
         tier=old_key.tier,
-        admin=old_key.admin,
+        role=old_key.role,
         rotated_from=old_key.id,
     )
 
@@ -231,7 +244,7 @@ async def rotate_api_key(
         name=new_key.name,
         key_prefix=new_key.key_prefix,
         tenant_id=new_key.tenant_id,
-        admin=new_key.admin,
+        role=new_key.role,
         revoked=new_key.revoked,
         created_at=new_key.created_at,
         key=plain_key,  # Only shown on creation

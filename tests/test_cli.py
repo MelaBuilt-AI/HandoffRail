@@ -1240,7 +1240,7 @@ class TestKeysCreateCommand:
         assert "key-001" in result.output
         assert "prod-key" in result.output
         assert "hr_abcDEF" in result.output
-        mock_client.create_api_key.assert_called_once_with(name="prod-key", tenant_id=None)
+        mock_client.create_api_key.assert_called_once_with(name="prod-key", tenant_id=None, role="admin")
 
     def test_keys_create_json(self):
         """Create API key in JSON format."""
@@ -1291,7 +1291,7 @@ class TestKeysCreateCommand:
             ])
 
         assert result.exit_code == 0
-        mock_client.create_api_key.assert_called_once_with(name="tenant-key", tenant_id="tenant-2")
+        mock_client.create_api_key.assert_called_once_with(name="tenant-key", tenant_id="tenant-2", role="admin")
 
 
 class TestKeysListCommand:

@@ -140,6 +140,7 @@ class ApiKey(Base):
     key_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="default")
     tier: Mapped[str] = mapped_column(String(32), nullable=False, default="free")
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="admin")
     admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     rotated_from: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)

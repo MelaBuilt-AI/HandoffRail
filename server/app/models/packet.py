@@ -290,7 +290,16 @@ class ApiKeyCreate(BaseModel):
 
     name: str
     tenant_id: str | None = None
-    admin: bool = False
+    role: str = "admin"
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        valid_roles = {"admin", "writer", "reader", "agent"}
+        if v not in valid_roles:
+            msg = f"Invalid role '{v}'. Must be one of: {sorted(valid_roles)}"
+            raise ValueError(msg)
+        return v
 
 
 class ApiKeyResponse(BaseModel):
@@ -300,7 +309,7 @@ class ApiKeyResponse(BaseModel):
     name: str
     key_prefix: str
     tenant_id: str
-    admin: bool = False
+    role: str = "admin"
     revoked: bool
     created_at: datetime
     key: str | None = None  # Only populated on creation

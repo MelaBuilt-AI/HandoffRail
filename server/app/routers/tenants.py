@@ -263,7 +263,7 @@ async def list_tenant_keys(
             name=k.name,
             key_prefix=k.key_prefix,
             tenant_id=k.tenant_id,
-            admin=k.admin,
+            role=k.role,
             revoked=k.revoked,
             created_at=k.created_at,
             key=None,

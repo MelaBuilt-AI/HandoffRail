@@ -342,6 +342,25 @@ export interface WebhookDelivery {
   updated_at?: string | null;
 }
 
+/** Options for creating an API key. */
+export interface CreateApiKeyOptions {
+  name: string;
+  tenant_id?: string;
+  role?: 'admin' | 'writer' | 'reader' | 'agent';
+}
+
+/** Response for an API key. */
+export interface ApiKeyResponse {
+  id: string;
+  name: string;
+  key_prefix: string;
+  tenant_id: string;
+  role: 'admin' | 'writer' | 'reader' | 'agent';
+  revoked: boolean;
+  created_at: string;
+  key?: string;
+}
+
 /** Options for claiming a packet. */
 export interface ClaimPacketOptions {
   agent_id: string;
