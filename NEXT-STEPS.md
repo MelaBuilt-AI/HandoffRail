@@ -24,7 +24,7 @@
 These are the features analyzed during the roadmap session on 2026-07-05. Impact and effort ratings are approximate. Pick and choose when ready to implement.
 
 ### 8. CLI Tool (`handoffrail` command)
-**Impact:** Medium · **Effort:** Medium · **Status:** 🔄 In Progress
+**Impact:** Medium · **Effort:** Medium · **Status:** ✅ Complete (2026-07-08)
 
 A CLI for interacting with HandoffRail from the terminal — useful for devops and debugging.
 
@@ -42,6 +42,8 @@ handoffrail keys create --name="prod-key"
 - JSON/table output formats (`--format=json|table`)
 - Config file (`~/.handoffrail.toml`) for base URL + API key
 - Shell completion (bash/zsh)
+- 78 CLI tests, all quality gates passing
+- Docs added to docs/api-reference.md
 
 ### 10. Redis Pub/Sub for Real-Time Events ✅
 **Impact:** High · **Effort:** Medium · **Status:** Complete (2026-07-08)
