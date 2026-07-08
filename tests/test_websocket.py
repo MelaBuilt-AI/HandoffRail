@@ -619,11 +619,12 @@ class TestStatsEndpoint:
                 "timeout_seconds": None,
             },
         }
-        await client.post("/api/v1/packets", json=payload)
+        create_resp = await client.post("/api/v1/packets", json=payload)
+        assert create_resp.status_code == 201, f"HITL packet creation failed: {create_resp.text}"
 
         response = await client.get("/api/v1/stats")
         data = response.json()
-        assert data["hitl_queue_depth"] == 1
+        assert data["hitl_queue_depth"] == 1, f"Expected hitl_queue_depth=1, got {data}"
 
 
 # ── SSE Integration Tests ──────────────────────────────────────────────────────

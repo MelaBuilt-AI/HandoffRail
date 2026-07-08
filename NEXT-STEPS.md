@@ -1,6 +1,6 @@
 # HandoffRail — Roadmap & Future Additions
 
-## ✅ Completed (Items 1-7, 9, 13)
+## ✅ Completed (Items 1-7, 9, 10, 13)
 
 | # | Feature | Status | Commit |
 |---|---------|--------|--------|
@@ -12,9 +12,10 @@
 | 6 | Webhook Retry + Delivery History | ✅ scheduled retry, DLQ, replay, `GET /hooks/{id}/deliveries` | this commit |
 | 7 | Rate Limiting (Per API Key) | ✅ per-minute sliding window + hourly tier quotas, Redis/fallback | this commit |
 | 9 | OpenAPI Schema Export & API Explorer | ✅ `/docs`, `/redoc`, `/openapi.json`, exported `docs/openapi.json` | this commit |
+| 10 | Redis Pub/Sub for Real-Time Events | ✅ SSEManager, /events endpoint, batch event publishing, Python SDK SSE client, 515 tests | this commit |
 | 13 | Structured Audit Log | ✅ tenant-scoped `GET /api/v1/audit` over lifecycle events | this commit |
 
-**Test totals after items 1-7, 9, 13:** pending final verification
+**Test totals after items 1-7, 9, 10, 13:** 515 passing
 
 ---
 
@@ -23,7 +24,7 @@
 These are the features analyzed during the roadmap session on 2026-07-05. Impact and effort ratings are approximate. Pick and choose when ready to implement.
 
 ### 8. CLI Tool (`handoffrail` command)
-**Impact:** Medium · **Effort:** Medium
+**Impact:** Medium · **Effort:** Medium · **Status:** 🔄 In Progress
 
 A CLI for interacting with HandoffRail from the terminal — useful for devops and debugging.
 
@@ -42,16 +43,10 @@ handoffrail keys create --name="prod-key"
 - Config file (`~/.handoffrail.toml`) for base URL + API key
 - Shell completion (bash/zsh)
 
-### 10. Redis Pub/Sub for Real-Time Events
-**Impact:** High · **Effort:** Medium
+### 10. Redis Pub/Sub for Real-Time Events ✅
+**Impact:** High · **Effort:** Medium · **Status:** Complete (2026-07-08)
 
-The WebSocket client currently uses a single connection. Scale to multi-instance deployments with Redis Pub/Sub.
-
-- Publish packet events to Redis channels (`packet:created`, `packet:claimed`, etc.)
-- WebSocket server subscribes to Redis channels and fans out to connected clients
-- Enable horizontal scaling (multiple server instances behind a load balancer)
-- Add Redis fallback when WebSocket unavailable (SSE endpoint as alternative)
-- Graceful degradation: if Redis is down, fall back to in-process event dispatch
+Added SSEManager + SSEConnection for SSE streaming, /events endpoint with channel subscriptions and keepalive, publish_event calls in batch endpoints, Redis event callback relay to both WebSocket and SSE. Python SDK SSE client with auto-reconnect. 10 new tests (515 total).
 
 ### 11. Multi-Tenant Isolation
 **Impact:** High · **Effort:** High

@@ -502,6 +502,82 @@ class TestClaimCommand:
         assert result.exit_code != 0
         assert "validation" in result.output.lower()
 
+    def test_claim_with_agent_shorthand(self):
+        """Claim using --agent shorthand (sets both id and name)."""
+        mock_resp = _make_packet_response(status="claimed")
+        mock_client = _mock_client()
+        mock_client.claim_packet.return_value = mock_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "claim", "550e8400-e29b-41d4-a716-446655440000",
+                "--agent", "billing-01",
+            ])
+
+        assert result.exit_code == 0, f"Exit code {result.exit_code}, output: {result.output}"
+        assert "claimed" in result.output.lower()
+        call_kwargs = mock_client.claim_packet.call_args[1]
+        assert call_kwargs["agent_id"] == "billing-01"
+        assert call_kwargs["agent_name"] == "billing-01"
+
+    def test_claim_with_agent_and_separate_name(self):
+        """Claim using --agent for ID and --agent-name for display name."""
+        mock_resp = _make_packet_response(status="claimed")
+        mock_client = _mock_client()
+        mock_client.claim_packet.return_value = mock_resp
+
+        runner = CliRunner()
+        with _patch_get_client(mock_client):
+            result = runner.invoke(cli, [
+                "--api-key", "test-key",
+                "claim", "550e8400-e29b-41d4-a716-446655440000",
+                "--agent", "billing-01",
+                "--agent-name", "BillingBot",
+            ])
+
+        assert result.exit_code == 0
+        call_kwargs = mock_client.claim_packet.call_args[1]
+        assert call_kwargs["agent_id"] == "billing-01"
+        assert call_kwargs["agent_name"] == "BillingBot"
+
+    def test_claim_agent_mutually_exclusive_with_agent_id(self):
+        """--agent and --agent-id should be mutually exclusive."""
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "--api-key", "test-key",
+            "claim", "550e8400-e29b-41d4-a716-446655440000",
+            "--agent", "my-agent",
+            "--agent-id", "other-agent",
+        ])
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower()
+
+    def test_claim_agent_mutually_exclusive_with_agent_id_positional(self):
+        """--agent and --agent-id should be mutually exclusive (positional test)."""
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "--api-key", "test-key",
+            "claim", "550e8400-e29b-41d4-a716-446655440000",
+            "--agent-id", "other-agent",
+            "--agent", "my-agent",
+        ])
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower()
+
+    def test_claim_missing_both_agent_and_agent_id(self):
+        """Claim without --agent or --agent-id should fail."""
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "--api-key", "test-key",
+            "claim", "550e8400-e29b-41d4-a716-446655440000",
+            "--agent-name", "Bot",
+            # Missing both --agent and --agent-id
+        ])
+        assert result.exit_code != 0
+        assert "--agent=ID" in result.output or "required" in result.output.lower()
+
 
 # ── respond command ───────────────────────────────────────────────────────
 
@@ -778,7 +854,7 @@ class TestGlobalOptions:
         runner = CliRunner()
         result = runner.invoke(cli, ["--version"])
         assert result.exit_code == 0
-        assert "0.1.0" in result.output
+        assert "0.2.0" in result.output
 
     def test_server_url_flag_overrides_env(self):
         """--server-url flag should override HANDOFFRAIL_URL env var."""

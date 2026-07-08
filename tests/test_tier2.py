@@ -102,9 +102,9 @@ class TestDeadLetterQueue:
         resp = await client.post(f"/api/v1/hooks/dlq/{fake_id}/replay")
         assert resp.status_code == 404
 
-    async def test_dlq_retry_all_empty(self, client: AsyncClient):
+    async def test_dlq_retry_all_empty(self, admin_client):
         """Retry-all works when there are no failed deliveries."""
-        resp = await client.post("/api/v1/hooks/dlq/retry-all")
+        resp = await admin_client.post("/api/v1/hooks/dlq/retry-all")
         assert resp.status_code == 200
         data = resp.json()
         assert data["retried"] == 0

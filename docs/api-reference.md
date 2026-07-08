@@ -637,3 +637,235 @@ All errors follow a consistent structure:
 | `RATE_LIMITED` | 429 | Rate limit exceeded |
 | `PAYLOAD_TOO_LARGE` | 413 | Packet exceeds tier size limit |
 | `SERVER_ERROR` | 500 | Internal server error |
+
+---
+
+## CLI Reference
+
+HandoffRail ships with a CLI tool (`handoffrail`) for interacting with the API
+from the terminal. It uses the Python SDK under the hood.
+
+### Installation
+
+The CLI is bundled with the main `handoffrail` package:
+
+```bash
+pip install handoffrail
+```
+
+Or run directly from the project root:
+
+```bash
+python -m cli.main --help
+```
+
+### Configuration
+
+The CLI looks for configuration in `~/.handoffrail.toml`:
+
+```toml
+[handoffrail]
+server_url = "http://localhost:8080/api/v1"
+api_key = "hr_your-api-key-here"
+```
+
+Values can also be set via environment variables (`HANDOFFRAIL_URL`,
+`HANDOFFRAIL_API_KEY`) or CLI flags (`--server-url`, `--api-key`). Priority:
+CLI flag > env var > config file > defaults.
+
+### Global Options
+
+| Option | Env Var | Default | Description |
+|--------|---------|---------|-------------|
+| `--server-url` | `HANDOFFRAIL_URL` | `http://localhost:8080/api/v1` | API base URL |
+| `--api-key` | `HANDOFFRAIL_API_KEY` | — | API key for authentication |
+| `--format` | — | `table` | Output format (`table` or `json`) |
+| `--verbose` / `-v` | — | — | Enable DEBUG logging |
+| `--quiet` / `-q` | — | — | Suppress non-error output |
+| `--help` | — | — | Show help message |
+| `--version` | — | — | Show version |
+
+### Packet Commands
+
+#### `packets list`
+
+List handoff packets with optional filters.
+
+```bash
+handoffrail packets list --status=created
+handoffrail packets list --status=created,claimed --priority=high --limit=50 --format=json
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--status` | — | Filter by status (comma-separated) |
+| `--source-agent` | — | Filter by source agent ID |
+| `--target-agent` | — | Filter by target agent ID |
+| `--tags` | — | Filter by tags (comma-separated) |
+| `--priority` | — | Filter by priority |
+| `--created-after` | — | ISO 8601 filter |
+| `--created-before` | — | ISO 8601 filter |
+| `--limit` | 20 | Max results (1–200) |
+| `--offset` | 0 | Pagination offset |
+| `--format` | `table` | Output format |
+
+#### `packets create`
+
+Create a new handoff packet from a JSON/YAML file or CLI arguments.
+
+```bash
+handoffrail packets create --file=packet.json
+handoffrail packets create --source-id=billing-01 --source-name=BillingBot \\
+    --target-id=analytics-01 --target-name=AnalyticsBot --summary="Process invoice"
+```
+
+| Option | Description |
+|--------|-------------|
+| `--file`, `-f` | Path to JSON or YAML file |
+| `--source-id` | Source agent ID |
+| `--source-name` | Source agent name |
+| `--target-id` | Target agent ID |
+| `--target-name` | Target agent name |
+| `--summary` | Context summary text |
+| `--priority` | Priority (`low`, `normal`, `high`, `critical`) |
+| `--tag` | Tags (can specify multiple) |
+| `--format` | Output format |
+
+#### `packets claim`
+
+Claim a packet for processing.
+
+```bash
+handoffrail packets claim <packet-id> --agent=agent-01
+handoffrail packets claim <packet-id> --agent=agent-01 --agent-name="Agent 01" --framework=langchain
+```
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--agent` | Yes* | Shorthand: sets both agent ID and name |
+| `--agent-id` | Yes* | Agent ID (alternative to `--agent`) |
+| `--agent-name` | — | Agent display name (defaults to agent ID) |
+| `--framework` | — | Framework identifier |
+| `--format` | — | Output format |
+
+> \* Either `--agent` or `--agent-id` is required.
+
+#### `packets get`
+
+Inspect a packet by ID.
+
+```bash
+handoffrail packets get <packet-id>
+handoffrail packets get <packet-id> --format=json
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--format` | `table` | Output format |
+
+#### `packets search`
+
+Full-text search across packet summaries and context.
+
+```bash
+handoffrail packets search "error handling"
+handoffrail packets search "invoice" --status=created --limit=10 --format=json
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--status` | — | Filter by status |
+| `--priority` | — | Filter by priority |
+| `--limit` | 20 | Max results (1–200) |
+| `--offset` | — | Pagination offset |
+| `--format` | `table` | Output format |
+
+### Flat Subcommands
+
+For convenience, packet subcommands are also available as flat commands:
+
+```bash
+handoffrail list --status=created
+handoffrail create --file=packet.json
+handoffrail get <packet-id>
+handoffrail claim <packet-id> --agent=agent-01
+handoffrail search "error handling"
+```
+
+### Other Commands
+
+#### `hooks list`
+
+List registered webhook configurations.
+
+```bash
+handoffrail hooks list
+handoffrail hooks list --format=json
+```
+
+#### `keys create`
+
+Create a new API key.
+
+```bash
+handoffrail keys create --name="prod-key"
+handoffrail keys create --name="prod-key" --tenant-id=tenant-01 --format=json
+```
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--name` | Yes | Human-readable key name |
+| `--tenant-id` | — | Tenant ID (defaults to current) |
+| `--format` | — | Output format |
+
+#### `keys list`
+
+List all API keys for the current tenant.
+
+```bash
+handoffrail keys list
+```
+
+#### `history`
+
+View the event trail for a packet.
+
+```bash
+handoffrail history <packet-id>
+```
+
+#### `respond`
+
+Submit a human response to a HITL checkpoint.
+
+```bash
+handoffrail respond <packet-id> --response="Approved" --responded-by="human-01"
+```
+
+#### `serve`
+
+Start the API server in development mode.
+
+```bash
+handoffrail serve --host=0.0.0.0 --port=8080 --reload
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--host` | `0.0.0.0` | Bind host |
+| `--port` | `8080` | Bind port |
+| `--reload` | — | Enable hot-reload |
+
+### Shell Completion
+
+Generate shell completion scripts:
+
+```bash
+handoffrail completion bash > ~/.handoffrail-completion.sh
+echo "source ~/.handoffrail-completion.sh" >> ~/.bashrc
+
+handoffrail completion zsh > ~/.handoffrail-completion.zsh
+echo "source ~/.handoffrail-completion.zsh" >> ~/.zshrc
+
+handoffrail completion fish > ~/.config/fish/completions/handoffrail.fish
+```

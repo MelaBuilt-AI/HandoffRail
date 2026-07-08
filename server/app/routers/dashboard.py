@@ -13,24 +13,31 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.db import Packet
+from app.middleware.auth import get_api_key_from_request
+from app.models.db import ApiKey, Packet
 from app.services.websocket import get_connection_manager
 
 router = APIRouter(prefix="/api/v1/stats", tags=["stats"])
 
 
 @router.get("")
-async def get_stats(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def get_stats(
+    db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(get_api_key_from_request),
+) -> dict[str, Any]:
     """Get aggregate statistics for the dashboard.
 
     Returns packet counts by status, recent activity, HITL queue depth,
-    and active WebSocket connections.
+    and active WebSocket connections. Results are scoped to the
+    authenticated tenant.
     """
+    tenant_filter = Packet.tenant_id == api_key.tenant_id
+
     # Total packets by status
     status_counts_query = select(
         Packet.status,
         func.count(Packet.id),
-    ).group_by(Packet.status)
+    ).where(tenant_filter).group_by(Packet.status)
 
     result = await db.execute(status_counts_query)
     status_rows = result.all()
@@ -41,14 +48,14 @@ async def get_stats(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     twenty_four_hours_ago = datetime.now(UTC) - timedelta(hours=24)
     recent_count_query = select(
         func.count(Packet.id),
-    ).where(Packet.created_at >= twenty_four_hours_ago)
+    ).where(Packet.created_at >= twenty_four_hours_ago, tenant_filter)
     recent_result = await db.execute(recent_count_query)
     packets_last_24h = recent_result.scalar() or 0
 
     # Average time to claim (for claimed/completed packets with claimed_at in metadata)
-    # This is an approximation — we look at packets that have been claimed
     claimed_packets_query = select(Packet).where(
-        Packet.status.in_(["claimed", "in_progress", "completed"])
+        Packet.status.in_(["claimed", "in_progress", "completed"]),
+        tenant_filter,
     )
     claimed_result = await db.execute(claimed_packets_query)
     claimed_packets = claimed_result.scalars().all()
@@ -61,7 +68,6 @@ async def get_stats(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
         claimed_at_str = metadata.get("claimed_at")
         if created_at_str and claimed_at_str:
             try:
-                # Parse ISO timestamps
                 created = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
                 claimed = datetime.fromisoformat(claimed_at_str.replace("Z", "+00:00"))
                 total_claim_time_seconds += (claimed - created).total_seconds()
@@ -74,13 +80,13 @@ async def get_stats(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     # HITL queue depth
     hitl_count_query = select(
         func.count(Packet.id),
-    ).where(Packet.status == "awaiting_human")
+    ).where(Packet.status == "awaiting_human", tenant_filter)
     hitl_result = await db.execute(hitl_count_query)
     hitl_queue_depth = hitl_result.scalar() or 0
 
     # Active WebSocket connections
     manager = get_connection_manager()
-    ws_connections = manager.active_connection_count
+    ws_connections = len(manager._tenant_connections.get(api_key.tenant_id, set()))
 
     return {
         "total_packets": total_packets,

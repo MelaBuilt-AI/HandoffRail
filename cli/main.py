@@ -46,7 +46,13 @@ from cli.config import load_config
     default=False,
     help="Suppress all output except errors.",
 )
-@click.version_option(version="0.1.0", prog_name="handoffrail")
+@click.option(
+    "--format", "output_format",
+    type=click.Choice(["table", "json"]),
+    default=None,
+    help="Output format (can be overridden by subcommand --format).",
+)
+@click.version_option(version="0.2.0", prog_name="handoffrail")
 @click.pass_context
 def cli(
     ctx: click.Context,
@@ -54,6 +60,7 @@ def cli(
     api_key: str | None,
     verbose: bool,
     quiet: bool,
+    output_format: str | None,
 ) -> None:
     """HandoffRail — Session-continuity middleware for multi-agent AI workflows."""
     ctx.ensure_object(dict)
@@ -86,6 +93,8 @@ def cli(
     )
     ctx.obj["verbose"] = verbose
     ctx.obj["quiet"] = quiet
+    if output_format:
+        ctx.obj["format"] = output_format
 
 
 # ── Flat subcommands (backward compatible) ───────────────────────────────

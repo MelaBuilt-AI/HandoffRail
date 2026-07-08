@@ -70,3 +70,30 @@ async def get_api_key_from_request(
         )
 
     return db_key
+
+
+async def require_admin(
+    api_key: ApiKey = Depends(get_api_key_from_request),
+) -> ApiKey:
+    """Dependency that requires the authenticated API key to have admin privileges.
+
+    Raises:
+        HTTPException 403: If the key is not an admin key.
+    """
+    if not api_key.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return api_key
+
+
+async def get_tenant_id(
+    api_key: ApiKey = Depends(get_api_key_from_request),
+) -> str:
+    """Dependency that extracts the tenant_id from the authenticated API key.
+
+    This is a convenience dependency for endpoints that need the tenant_id
+    without needing the full ApiKey object.
+    """
+    return api_key.tenant_id

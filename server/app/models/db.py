@@ -140,10 +140,32 @@ class ApiKey(Base):
     key_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
     tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="default")
     tier: Mapped[str] = mapped_column(String(32), nullable=False, default="free")
+    admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     rotated_from: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Tenant(Base):
+    """A tenant (organization or workspace) that owns resources.
+
+    Tenants provide isolation boundaries for packets, API keys, webhooks,
+    and other resources. Soft-delete via deleted_at.
+    """
+
+    __tablename__ = "tenants"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    tier: Mapped[str] = mapped_column(String(32), nullable=False, default="free")
+    handoffs_per_day: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    max_api_keys: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class WebhookDelivery(Base):

@@ -35,12 +35,21 @@ async def create_api_key(
     plain_key, key_hash = generate_api_key()
     key_prefix = plain_key[:8]  # e.g., "hr_abcdEF"
 
+    # Determine tenant_id — non-admin keys can only create keys for their own tenant
+    target_tenant_id = payload.tenant_id or _current_key.tenant_id
+    if payload.tenant_id and payload.tenant_id != _current_key.tenant_id and not _current_key.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin keys can create keys for other tenants",
+        )
+
     db_key = ApiKey(
         id=str(uuid4()),
         name=payload.name,
         key_hash=key_hash,
         key_prefix=key_prefix,
-        tenant_id=payload.tenant_id or _current_key.tenant_id,
+        tenant_id=target_tenant_id,
+        admin=payload.admin if _current_key.admin else False,
     )
 
     db.add(db_key)
@@ -61,6 +70,7 @@ async def create_api_key(
         name=db_key.name,
         key_prefix=db_key.key_prefix,
         tenant_id=db_key.tenant_id,
+        admin=db_key.admin,
         revoked=db_key.revoked,
         created_at=db_key.created_at,
         key=plain_key,  # Only shown on creation
@@ -87,6 +97,7 @@ async def list_api_keys(
             name=k.name,
             key_prefix=k.key_prefix,
             tenant_id=k.tenant_id,
+            admin=k.admin,
             revoked=k.revoked,
             created_at=k.created_at,
             key=None,  # Never show key on list
@@ -104,11 +115,22 @@ async def revoke_api_key(
     db: AsyncSession = Depends(get_db),
     _current_key: ApiKey = Depends(get_api_key_from_request),
 ) -> None:
-    """Revoke (soft-delete) an API key. The key is marked as revoked, not removed."""
+    """Revoke (soft-delete) an API key. The key is marked as revoked, not removed.
+
+    Only keys belonging to the same tenant as the current key can be revoked,
+    unless the current key is an admin key.
+    """
     result = await db.execute(select(ApiKey).where(ApiKey.id == key_id))
     db_key = result.scalar_one_or_none()
 
     if db_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"API key {key_id} not found",
+        )
+
+    # Tenant scope check: can only revoke keys in your own tenant (unless admin)
+    if db_key.tenant_id != _current_key.tenant_id and not _current_key.admin:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"API key {key_id} not found",
@@ -145,12 +167,22 @@ async def rotate_api_key(
     The new key inherits the same name (with ' (rotated)' suffix), tenant_id,
     and tier as the original. The old key is immediately revoked.
 
+    Only keys belonging to the same tenant can be rotated, unless the current
+    key is an admin key.
+
     Returns the new key with the plain key value (shown only once).
     """
     result = await db.execute(select(ApiKey).where(ApiKey.id == key_id))
     old_key = result.scalar_one_or_none()
 
     if old_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"API key {key_id} not found",
+        )
+
+    # Tenant scope check: can only rotate keys in your own tenant (unless admin)
+    if old_key.tenant_id != _current_key.tenant_id and not _current_key.admin:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"API key {key_id} not found",
@@ -173,6 +205,7 @@ async def rotate_api_key(
         key_prefix=key_prefix,
         tenant_id=old_key.tenant_id,
         tier=old_key.tier,
+        admin=old_key.admin,
         rotated_from=old_key.id,
     )
 
@@ -198,6 +231,7 @@ async def rotate_api_key(
         name=new_key.name,
         key_prefix=new_key.key_prefix,
         tenant_id=new_key.tenant_id,
+        admin=new_key.admin,
         revoked=new_key.revoked,
         created_at=new_key.created_at,
         key=plain_key,  # Only shown on creation

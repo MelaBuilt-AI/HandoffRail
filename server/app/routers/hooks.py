@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_api_key_from_request
+from app.middleware.auth import get_api_key_from_request, require_admin
 from app.models.db import ApiKey, Webhook, WebhookDelivery
 from app.models.packet import WebhookCreate, WebhookResponse
 from app.services.webhook import get_dlq_entries, replay_dlq_entry, retry_failed_deliveries
@@ -225,8 +225,8 @@ async def replay_dlq(
     db: AsyncSession = Depends(get_db),
     api_key: ApiKey = Depends(get_api_key_from_request),
 ) -> dict[str, Any]:
-    """Replay a single dead letter delivery attempt."""
-    success = await replay_dlq_entry(delivery_id)
+    """Replay a single dead letter delivery attempt. Scoped to the authenticated tenant."""
+    success = await replay_dlq_entry(delivery_id, tenant_id=api_key.tenant_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -241,8 +241,8 @@ async def replay_dlq(
 )
 async def retry_all_dlq(
     db: AsyncSession = Depends(get_db),
-    api_key: ApiKey = Depends(get_api_key_from_request),
+    _admin: ApiKey = Depends(require_admin),
 ) -> dict[str, Any]:
-    """Retry all failed deliveries that are due for retry."""
+    """Retry all failed deliveries that are due for retry. Requires admin API key."""
     result = await retry_failed_deliveries(max_batch=100)
     return result

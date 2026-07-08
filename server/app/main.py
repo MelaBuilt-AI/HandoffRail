@@ -24,6 +24,7 @@ from app.routers import (
     keys_router,
     metrics_router,
     packets_router,
+    tenants_router,
     websocket_router,
 )
 from app.routers.metrics import PrometheusMiddleware
@@ -126,6 +127,7 @@ def create_app(
     app.include_router(packets_router)
     app.include_router(keys_router)
     app.include_router(hooks_router)
+    app.include_router(tenants_router)
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(dashboard_router)

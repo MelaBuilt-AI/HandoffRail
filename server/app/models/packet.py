@@ -289,6 +289,7 @@ class ApiKeyCreate(BaseModel):
 
     name: str
     tenant_id: str | None = None
+    admin: bool = False
 
 
 class ApiKeyResponse(BaseModel):
@@ -298,6 +299,7 @@ class ApiKeyResponse(BaseModel):
     name: str
     key_prefix: str
     tenant_id: str
+    admin: bool = False
     revoked: bool
     created_at: datetime
     key: str | None = None  # Only populated on creation
@@ -419,6 +421,39 @@ class RateLimitInfo(BaseModel):
     remaining: int
     reset: int  # seconds until reset
     tier: str
+
+
+class TenantCreate(BaseModel):
+    """Request body for creating a new tenant."""
+
+    name: str = Field(..., min_length=1, max_length=128)
+    tier: str = "free"
+    handoffs_per_day: int = 5
+    max_api_keys: int = 5
+
+
+class TenantUpdate(BaseModel):
+    """Request body for updating a tenant."""
+
+    name: str | None = None
+    tier: str | None = None
+    handoffs_per_day: int | None = None
+    max_api_keys: int | None = None
+
+
+class TenantResponse(BaseModel):
+    """Response for a tenant."""
+
+    id: str
+    name: str
+    tier: str
+    handoffs_per_day: int
+    max_api_keys: int
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
 
 
 class ErrorResponse(BaseModel):

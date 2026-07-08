@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.middleware.auth import get_api_key_from_request
+from app.middleware.rate_limit import check_daily_handoff_limit
 from app.models.db import ApiKey, Packet, PacketEvent
 from app.models.packet import (
     BatchClaimError,
@@ -314,6 +315,13 @@ async def create_packet(
     packet_id = str(uuid4())
     now = datetime.now(UTC)
 
+    # Check daily handoff limit for tenant
+    if not await check_daily_handoff_limit(api_key.tenant_id, api_key.tier):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Daily handoff limit reached for your tier",
+        )
+
     with trace_packet_operation("create_packet", packet_id=packet_id, tenant_id=api_key.tenant_id) as span:
         span.set_attribute("packet.source_agent", payload.metadata.source_agent.id)
         span.set_attribute("packet.target_agent", payload.metadata.target_agent.id)
@@ -409,6 +417,13 @@ async def batch_create_packets(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Batch size exceeds maximum of {settings.batch_max_size}",
+        )
+
+    # Check daily handoff limit — reserve slots for the whole batch upfront
+    if not await check_daily_handoff_limit(api_key.tenant_id, api_key.tier):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Daily handoff limit reached for your tier",
         )
 
     created: list[HandoffPacketResponse] = []

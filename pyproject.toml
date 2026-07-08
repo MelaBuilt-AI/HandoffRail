@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 handoffrail = "cli.main:cli"
+handoffrail-cli = "cli.main:cli"
 
 [tool.ruff]
 target-version = "py311"

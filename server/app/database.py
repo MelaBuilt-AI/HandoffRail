@@ -15,7 +15,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.models.db import Base
+from app.models.db import Base, Tenant
 
 # Detect database URL from environment or default to SQLite
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./handoffrail.db")
@@ -95,11 +95,13 @@ async def init_db() -> None:
 
     In production with PostgreSQL, Alembic migrations should be used instead.
     This is safe to call regardless — create_all is idempotent.
-    Also sets up full-text search indexes (FTS5 for SQLite, tsvector for PostgreSQL).
+    Also sets up full-text search indexes (FTS5 for SQLite, tsvector for PostgreSQL)
+    and seeds the default tenant for dev mode.
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _init_fts(conn)
+        await _seed_default_tenant(conn)
 
 
 async def _init_fts(conn) -> None:
@@ -168,6 +170,29 @@ async def _init_fts(conn) -> None:
                 );
             END;
         """))
+
+
+async def _seed_default_tenant(conn) -> None:
+    """Seed the default tenant for dev mode if it doesn't exist.
+
+    This is only used when tables are created from scratch (SQLite dev mode).
+    In production, the Alembic migration handles this.
+    """
+    # Check if the tenants table exists and has data
+    try:
+        result = await conn.execute(text("SELECT 1 FROM tenants WHERE id = 'default'"))
+        if result.scalar_one_or_none() is not None:
+            return  # Already seeded
+    except Exception:
+        return  # Table might not exist yet
+
+    # Insert default tenant
+    await conn.execute(
+        text(
+            "INSERT OR IGNORE INTO tenants (id, name, tier, handoffs_per_day, max_api_keys, created_at, updated_at) "
+            "VALUES ('default', 'Default Tenant', 'free', 10000, 25, datetime('now'), datetime('now'))"
+        )
+    )
 
 
 async def check_db_connection() -> bool:

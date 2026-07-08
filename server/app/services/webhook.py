@@ -451,13 +451,15 @@ async def get_dlq_entries(
         ]
 
 
-async def replay_dlq_entry(delivery_id: str) -> bool:
+async def replay_dlq_entry(delivery_id: str, tenant_id: str | None = None) -> bool:
     """Replay a single dead letter delivery.
 
     Resets the delivery to pending and attempts immediate delivery.
 
     Args:
         delivery_id: The WebhookDelivery ID to replay.
+        tenant_id: Optional tenant filter. When provided, ensures the delivery
+                   belongs to the specified tenant.
 
     Returns:
         True if delivery succeeded, False otherwise.
@@ -468,6 +470,10 @@ async def replay_dlq_entry(delivery_id: str) -> bool:
         )
         delivery = result.scalar_one_or_none()
         if delivery is None:
+            return False
+
+        # Tenant scope check
+        if tenant_id is not None and delivery.tenant_id != tenant_id:
             return False
 
         if delivery.status != "dead_letter":
