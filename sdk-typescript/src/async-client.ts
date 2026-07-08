@@ -47,6 +47,9 @@ import type {
   BatchClaimResponse,
   BatchCompleteResponse,
   SearchOptions,
+  SchemaCreate,
+  SchemaResponse,
+  SchemaListResponse,
 } from './models';
 
 import {

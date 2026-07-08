@@ -103,6 +103,10 @@ export type {
   BatchCompleteError,
   BatchCompleteResponse,
   SearchOptions,
+  SchemaCreate,
+  SchemaResponse,
+  SchemaListResponse,
+  ListSchemasOptions,
 } from './models';
 
 export {

@@ -194,6 +194,7 @@ class HandoffPacketCreate(BaseModel):
     actions: Actions = Field(default_factory=Actions)
     dependencies: list[Dependency] = Field(default_factory=list)
     hitl: HitlCheckpoint | None = None
+    schema_id: str | None = Field(None, description="Optional schema ID for context validation")
 
     @field_validator("hitl")
     @classmethod
@@ -412,6 +413,7 @@ class ChainRequest(BaseModel):
     actions: Actions = Field(default_factory=Actions)
     dependencies: list[Dependency] = Field(default_factory=list)
     hitl: HitlCheckpoint | None = None
+    schema_id: str | None = Field(None, description="Optional schema ID for context validation")
 
 
 class RateLimitInfo(BaseModel):
@@ -454,6 +456,44 @@ class TenantResponse(BaseModel):
     deleted_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class SchemaCreate(BaseModel):
+    """Request body for creating a new schema."""
+
+    name: str = Field(..., min_length=1, max_length=128, description="Schema name")
+    json_schema: dict[str, Any] = Field(..., description="JSON Schema specification (draft-07+)")
+    version: int = Field(1, ge=1, description="Schema version number")
+
+    @field_validator("json_schema")
+    @classmethod
+    def validate_schema_is_object(cls, v: dict[str, Any]) -> dict[str, Any]:
+        if "type" not in v:
+            msg = "JSON Schema must have a 'type' field"
+            raise ValueError(msg)
+        return v
+
+
+class SchemaResponse(BaseModel):
+    """Response for a schema."""
+
+    id: str
+    name: str
+    version: int
+    json_schema: dict[str, Any]
+    tenant_id: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SchemaListResponse(BaseModel):
+    """Paginated list of schemas."""
+
+    schemas: list[SchemaResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class ErrorResponse(BaseModel):

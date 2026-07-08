@@ -47,6 +47,9 @@ from handoffrail.sdk.models import (
     TenantCreate,
     TenantResponse,
     TenantUpdate,
+    SchemaCreate,
+    SchemaListResponse,
+    SchemaResponse,
     WebhookCreate,
     WebhookResponse,
 )
@@ -457,6 +460,54 @@ class AsyncHandoffRailClient:
             params.update(options.to_params())
         data = await self._request("GET", "/packets/search", params=params)
         return PacketListResponse.from_dict(data)
+
+    # ── Schema Registry ──────────────────────────────────────────────────────────
+
+    async def create_schema(self, *, name: str, json_schema: dict[str, Any], version: int = 1) -> SchemaResponse:
+        """Register a new JSON schema for packet context validation.
+
+        Args:
+            name: A human-readable name for the schema.
+            json_schema: The JSON Schema specification (draft-07+).
+            version: Schema version number (default 1).
+
+        Returns:
+            The created schema response.
+        """
+        payload = SchemaCreate(name=name, json_schema=json_schema, version=version)
+        data = await self._request("POST", "/schemas", json_data=payload.to_dict())
+        return SchemaResponse.from_dict(data)
+
+    async def list_schemas(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> SchemaListResponse:
+        """List all schemas for the authenticated tenant.
+
+        Args:
+            limit: Max results per page (1–200, default 50).
+            offset: Pagination offset.
+
+        Returns:
+            Paginated list of schemas.
+        """
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        data = await self._request("GET", "/schemas", params=params)
+        return SchemaListResponse.from_dict(data)
+
+    async def get_schema(self, schema_id: str) -> SchemaResponse:
+        """Get a schema by ID.
+
+        Args:
+            schema_id: The schema UUID.
+
+        Returns:
+            The schema response.
+        """
+        data = await self._request("GET", f"/schemas/{schema_id}")
+        return SchemaResponse.from_dict(data)
 
     # ── API Keys ───────────────────────────────────────────────────────────────
 

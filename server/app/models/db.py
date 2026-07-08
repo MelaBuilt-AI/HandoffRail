@@ -168,6 +168,31 @@ class Tenant(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class Schema(Base):
+    """A JSON schema that can be used to validate packet context fields.
+
+    Users define JSON schemas and optionally reference them during packet
+    creation by setting schema_id on the packet. When provided, the packet's
+    context field is validated against the schema before creation.
+    """
+
+    __tablename__ = "schemas"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    json_schema: Mapped[str] = mapped_column(Text, nullable=False)  # JSONB in PostgreSQL, JSON string in SQLite
+    tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="default")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    def get_json_schema(self) -> dict[str, Any]:
+        result: dict[str, Any] = json.loads(self.json_schema)
+        return result
+
+    def set_json_schema(self, value: dict[str, Any]) -> None:
+        self.json_schema = json.dumps(value, default=str)
+
+
 class WebhookDelivery(Base):
     """Webhook delivery attempt log — tracks retries and dead letter queue."""
 

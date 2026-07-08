@@ -342,6 +342,21 @@ async def create_packet(
         # Build context dict
         context_dict = payload.context.model_dump(mode="json")
 
+        # Validate context against schema if schema_id is provided
+        if payload.schema_id is not None:
+            from app.services.schema_validator import validate_context_against_schema
+            validation_error = await validate_context_against_schema(
+                schema_id=payload.schema_id,
+                context=context_dict,
+                db=db,
+                tenant_id=api_key.tenant_id,
+            )
+            if validation_error is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=validation_error,
+                )
+
         # Build decisions, actions, dependencies dicts
         decisions_list = [d.model_dump(mode="json") for d in payload.decisions]
         actions_dict = payload.actions.model_dump(mode="json")
@@ -449,6 +464,21 @@ async def batch_create_packets(
 
             # Build context dict
             context_dict = packet_payload.context.model_dump(mode="json")
+
+            # Validate context against schema if schema_id is provided
+            if packet_payload.schema_id is not None:
+                from app.services.schema_validator import validate_context_against_schema
+                validation_error = await validate_context_against_schema(
+                    schema_id=packet_payload.schema_id,
+                    context=context_dict,
+                    db=db,
+                    tenant_id=api_key.tenant_id,
+                )
+                if validation_error is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=validation_error,
+                    )
 
             # Build decisions, actions, dependencies dicts
             decisions_list = [d.model_dump(mode="json") for d in packet_payload.decisions]
@@ -1274,6 +1304,21 @@ async def chain_packet(
         # Only add parent conversations that aren't already referenced
         merged_conv = parent_conv + existing_conv
         context_dict["conversation_state"] = merged_conv
+
+    # Validate context against schema if schema_id is provided
+    if payload.schema_id is not None:
+        from app.services.schema_validator import validate_context_against_schema
+        validation_error = await validate_context_against_schema(
+            schema_id=payload.schema_id,
+            context=context_dict,
+            db=db,
+            tenant_id=api_key.tenant_id,
+        )
+        if validation_error is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=validation_error,
+            )
 
     # Build decisions, actions, dependencies dicts
     decisions_list = [d.model_dump(mode="json") for d in payload.decisions]

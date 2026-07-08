@@ -51,6 +51,8 @@ import type {
   BatchClaimResponse,
   BatchCompleteResponse,
   SearchOptions,
+  SchemaResponse,
+  SchemaListResponse,
 } from './models';
 
 import {
@@ -598,6 +600,36 @@ export class HandoffRailClient {
     }
     const data = this._request('GET', '/packets/search', { params });
     return data as unknown as PacketListResponse;
+  }
+
+  // ── Schema Registry ──────────────────────────────────────────────────────────
+
+  /** Register a new JSON schema for packet context validation. */
+  createSchema(options: { name: string; json_schema: Record<string, unknown>; version?: number }): SchemaResponse {
+    const data = this._request('POST', '/schemas', {
+      jsonData: {
+        name: options.name,
+        json_schema: options.json_schema,
+        version: options.version ?? 1,
+      },
+    });
+    return data as unknown as SchemaResponse;
+  }
+
+  /** List all schemas for the authenticated tenant. */
+  listSchemas(options?: { limit?: number; offset?: number }): SchemaListResponse {
+    const params: Record<string, string | number | undefined> = {
+      limit: options?.limit ?? 50,
+      offset: options?.offset ?? 0,
+    };
+    const data = this._request('GET', '/schemas', { params });
+    return data as unknown as SchemaListResponse;
+  }
+
+  /** Get a schema by ID. */
+  getSchema(schemaId: string): SchemaResponse {
+    const data = this._request('GET', `/schemas/\${encodeURIComponent(schemaId)}`);
+    return data as unknown as SchemaResponse;
   }
 
   // ── Response helpers ───────────────────────────────────────────────────

@@ -183,6 +183,7 @@ export interface PacketCreate {
   actions?: Actions;
   dependencies?: Dependency[];
   hitl?: HitlCheckpoint;
+  schema_id?: string;
 }
 
 /** Full packet response returned from the API. */
@@ -225,6 +226,7 @@ export interface PacketUpdate {
   actions?: Actions;
   dependencies?: Dependency[];
   hitl?: HitlCheckpoint;
+  schema_id?: string;
 }
 
 /** A single event in the packet history audit trail. */
@@ -277,6 +279,7 @@ export interface ChainHandoffRequest {
   actions?: Actions;
   dependencies?: Dependency[];
   hitl?: HitlCheckpoint;
+  schema_id?: string;
 }
 
 /** Request body for registering a webhook. */
@@ -401,6 +404,7 @@ export function serializePacketCreate(p: PacketCreate): Record<string, unknown> 
     actions: p.actions,
     dependencies: p.dependencies,
     hitl: p.hitl,
+    schema_id: p.schema_id,
   });
 }
 
@@ -415,6 +419,7 @@ export function serializePacketUpdate(p: PacketUpdate): Record<string, unknown> 
     actions: p.actions,
     dependencies: p.dependencies,
     hitl: p.hitl,
+    schema_id: p.schema_id,
   });
 }
 
@@ -429,6 +434,7 @@ export function serializeChainHandoffRequest(r: ChainHandoffRequest): Record<str
     actions: r.actions,
     dependencies: r.dependencies,
     hitl: r.hitl,
+    schema_id: r.schema_id,
   });
 }
 

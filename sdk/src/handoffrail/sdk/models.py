@@ -291,6 +291,7 @@ class PacketCreate(BaseModel):
     actions: Actions = Field(default_factory=Actions)
     dependencies: list[Dependency] = Field(default_factory=list)
     hitl: HitlCheckpoint | None = None
+    schema_id: str | None = None
 
     @field_validator("hitl")
     @classmethod
@@ -743,6 +744,63 @@ class TenantResponse(BaseModel):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TenantResponse:
         return cls.model_validate(data)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", exclude_none=True)
+
+
+# ── Schema Registry ─────────────────────────────────────────────────────────────
+
+
+class SchemaCreate(BaseModel):
+    """Request body for registering a new JSON schema."""
+
+    name: str
+    json_schema: dict[str, Any]
+    version: int = 1
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SchemaCreate:
+        return cls.model_validate(data)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", exclude_none=True)
+
+
+class SchemaResponse(BaseModel):
+    """Response from the schema registry API."""
+
+    id: str
+    name: str
+    version: int
+    json_schema: dict[str, Any]
+    tenant_id: str
+    created_at: datetime
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SchemaResponse:
+        return cls.model_validate(data)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", exclude_none=True)
+
+
+class SchemaListResponse(BaseModel):
+    """Paginated list of schemas."""
+
+    schemas: list[SchemaResponse]
+    total: int
+    limit: int
+    offset: int
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SchemaListResponse:
+        return cls(
+            schemas=[SchemaResponse.from_dict(s) for s in data.get("schemas", [])],
+            total=data.get("total", 0),
+            limit=data.get("limit", 50),
+            offset=data.get("offset", 0),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json", exclude_none=True)

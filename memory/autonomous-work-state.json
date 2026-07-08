@@ -1,6 +1,17 @@
 {
   "status": "idle",
-  "lastCompleted": "2026-05-14T00:55:00Z",
-  "lastCompletedTask": "HandoffRail Week 4 — Python SDK Core",
-  "lastResult": "success"
+  "lastCompleted": "2026-07-08T06:53:47.137106+00:00",
+  "lastCompletedTask": "HandoffRail Item 8 \u2014 CLI Tool",
+  "lastResult": "success",
+  "completedItems": [
+    {
+      "item": 8,
+      "task": "CLI Tool (handoffrail command)",
+      "date": "2026-07-08",
+      "details": "Full CLI with packets/hooks/keys commands, --agent shorthand, --format global option, 78 tests, docs updated"
+    }
+  ],
+  "last_completed": {
+    "multi_tenant_isolation": "2026-07-08T05:27"
+  }
 }
