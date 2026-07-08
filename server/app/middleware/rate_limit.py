@@ -18,6 +18,7 @@ from uuid import uuid4
 
 import structlog
 from fastapi import Request, Response
+from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.types import ASGIApp
 
@@ -256,6 +257,7 @@ async def redis_sliding_window_check_and_increment(
 
 
 REDIS_RATE_LIMIT_PREFIX = "hr:ratelimit"
+REDIS_TENANT_RATE_LIMIT_PREFIX = "hr:ratelimit:tenant"
 REDIS_DAILY_HANDOFF_PREFIX = "hr:daily_handoff"
 
 
@@ -296,6 +298,42 @@ async def redis_get_rate_limit_count(key_id: str, window_start: float) -> int | 
         return None
 
 
+async def redis_increment_tenant_rate_limit(tenant_id: str, window_start: float, window_seconds: int) -> int | None:
+    """Atomically increment per-tenant rate limit counter in Redis.
+
+    Uses INCR + EXPIRE for atomic fixed-window counting.
+    Returns the new count, or None if Redis is unavailable.
+    """
+    pubsub = get_pubsub_manager()
+    if not pubsub.is_connected or pubsub._redis is None:
+        return None
+
+    try:
+        redis_key = f"{REDIS_TENANT_RATE_LIMIT_PREFIX}:{tenant_id}:{int(window_start)}"
+        count: int = await pubsub._redis.incr(redis_key)
+        if count == 1:
+            await pubsub._redis.expire(redis_key, window_seconds + 60)
+        return count
+    except Exception as exc:
+        logger.warning("redis_tenant_rate_limit_error", error=str(exc), tenant_id=tenant_id)
+        return None
+
+
+async def redis_get_tenant_rate_limit_count(tenant_id: str, window_start: float) -> int | None:
+    """Get current per-tenant rate limit count from Redis. Returns None if unavailable."""
+    pubsub = get_pubsub_manager()
+    if not pubsub.is_connected or pubsub._redis is None:
+        return None
+
+    try:
+        redis_key = f"{REDIS_TENANT_RATE_LIMIT_PREFIX}:{tenant_id}:{int(window_start)}"
+        count = await pubsub._redis.get(redis_key)
+        return int(count) if count is not None else 0
+    except Exception as exc:
+        logger.warning("redis_tenant_rate_limit_get_error", error=str(exc), tenant_id=tenant_id)
+        return None
+
+
 async def redis_increment_daily_handoff(tenant_id: str, day_key: str) -> int | None:
     """Atomically increment daily handoff counter in Redis. Returns None if unavailable."""
     pubsub = get_pubsub_manager()
@@ -327,6 +365,42 @@ async def redis_get_daily_handoff_count(tenant_id: str, day_key: str) -> int | N
     except Exception as exc:
         logger.warning("redis_daily_handoff_get_error", error=str(exc), tenant_id=tenant_id)
         return None
+
+
+# ── In-memory principal cache (key_hash → tenant info, 5 min TTL) ──────
+
+_KEY_CACHE_TTL = 300  # 5 seconds for dev, 300 for production
+_key_cache: dict[str, tuple[str, str, float]] = {}  # key_hash -> (tenant_id, tier, expiry_ts)
+
+
+async def _cached_key_lookup(key_hash: str) -> tuple[str, str] | None:
+    """Look up tenant_id and tier for a hashed API key.
+
+    Uses a 5-minute in-memory TTL cache to avoid DB lookups on every request.
+    Returns (tenant_id, tier) or None if the key is not found or revoked.
+    """
+    now = time.time()
+    cached = _key_cache.get(key_hash)
+    if cached and cached[2] > now:
+        return cached[0], cached[1]
+
+    from app.database import async_session
+    from app.models.db import ApiKey
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(ApiKey).where(ApiKey.key_hash == key_hash)
+        )
+        db_key = result.scalar_one_or_none()
+
+    if db_key is None or db_key.revoked:
+        _key_cache.pop(key_hash, None)
+        return None
+
+    tenant_id = db_key.tenant_id
+    tier = db_key.tier
+    _key_cache[key_hash] = (tenant_id, tier, now + _KEY_CACHE_TTL)
+    return tenant_id, tier
 
 
 # ── Module-level fallback instances (shared for tests) ─────────────────────────
@@ -394,11 +468,16 @@ DailyHandoffCounter = InMemoryDailyHandoffCounter
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Per-API-key rate limiting middleware with per-minute sliding window + tier-based per-hour quota.
+    """Per-API-key + per-tenant rate limiting middleware with per-minute sliding window
+    + tier-based per-hour quota enforced at the tenant level.
 
-    Two-layer rate limiting:
-    1. Per-minute sliding window (burst protection) — checked first
-    2. Per-hour tier-based fixed window (quota enforcement) — existing behavior
+    Three-layer rate limiting:
+    1. Per-minute sliding window (burst protection) — per API key
+    2. Per-hour tier-based fixed window (quota enforcement) — per tenant (aggregate)
+    3. Daily handoff limit — per tenant (checked in packet creation)
+
+    Layer 2 aggregates ALL API keys in a tenant toward the same hourly limit,
+    so a tenant with 5 free-tier keys still only gets 100 requests/hour total.
 
     Uses Redis for atomic counting when available, falls back to
     in-memory counters when Redis is unavailable.
@@ -417,12 +496,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.registry = rate_limiter_registry
         self.sliding_counter = sliding_window_counter
 
-    async def _get_key_info(self, request: Request) -> tuple[str, str]:
-        """Extract tier and key_id from request."""
+    async def _get_key_info(self, request: Request) -> tuple[str, str, str]:
+        """Extract tier, key_id, and tenant_id from request.
+
+        When request.state.api_key is set (by an auth middleware), uses it directly.
+        Otherwise, looks up the key from the database via the in-memory cache.
+        """
         api_key = getattr(request.state, "api_key", None)
         if api_key is not None:
             tier = getattr(api_key, "tier", DEFAULT_TIER)
             key_id = api_key.id
+            tenant_id = api_key.tenant_id
         else:
             raw_key = request.headers.get("X-API-Key")
             if raw_key:
@@ -430,11 +514,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
                 key_hash = hash_key(raw_key)
                 key_id = f"key:{key_hash[:16]}"
-                tier = DEFAULT_TIER
+
+                # Look up tenant info from cache or DB
+                info = await _cached_key_lookup(key_hash)
+                if info:
+                    tenant_id, tier = info
+                else:
+                    tenant_id = "default"
+                    tier = DEFAULT_TIER
             else:
                 tier = DEFAULT_TIER
                 key_id = f"ip:{request.client.host if request.client else 'unknown'}"
-        return tier, key_id
+                tenant_id = "default"
+        return tier, key_id, tenant_id
 
     async def _check_minute_limit(self, key_id: str, limit: int) -> tuple[bool, int, int]:
         """Check per-minute sliding window limit.
@@ -448,11 +540,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return self.sliding_counter.check_and_increment(key_id, limit)
 
     async def _check_hour_limit(
-        self, key_id: str, tier: str
+        self, tenant_id: str, tier: str
     ) -> tuple[int, int]:
-        """Check per-hour tier-based fixed window limit.
+        """Check per-hour tier-based fixed window limit at the TENANT level.
 
-        Returns (current_count_in_window, remaining_before_this_request).
+        All API keys in the same tenant share the same hourly quota.
+
+        Returns (current_count_in_window, limit).
         Already increments the counter as a side effect.
         """
         limit = self.tier_limits.get(tier, self.tier_limits[DEFAULT_TIER])
@@ -461,22 +555,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         window_start = float(window_key * RATE_LIMIT_WINDOW_SECONDS)
 
         # Try Redis first, fall back to in-memory
-        current_count = await redis_get_rate_limit_count(key_id, window_start)
+        current_count = await redis_get_tenant_rate_limit_count(tenant_id, window_start)
 
         if current_count is not None:
-            new_count = await redis_increment_rate_limit(
-                key_id, window_start, RATE_LIMIT_WINDOW_SECONDS
+            new_count = await redis_increment_tenant_rate_limit(
+                tenant_id, window_start, RATE_LIMIT_WINDOW_SECONDS
             )
             if new_count is not None:
                 current_count = new_count - 1
             else:
-                self.registry.cleanup_old(key_id, window_start, RATE_LIMIT_WINDOW_SECONDS * 2)
-                current_count = self.registry.get_count(key_id, window_start)
-                self.registry.increment(key_id, window_start)
+                self.registry.cleanup_old(tenant_id, window_start, RATE_LIMIT_WINDOW_SECONDS * 2)
+                current_count = self.registry.get_count(tenant_id, window_start)
+                self.registry.increment(tenant_id, window_start)
         else:
-            self.registry.cleanup_old(key_id, window_start, RATE_LIMIT_WINDOW_SECONDS * 2)
-            current_count = self.registry.get_count(key_id, window_start)
-            self.registry.increment(key_id, window_start)
+            self.registry.cleanup_old(tenant_id, window_start, RATE_LIMIT_WINDOW_SECONDS * 2)
+            current_count = self.registry.get_count(tenant_id, window_start)
+            self.registry.increment(tenant_id, window_start)
 
         return current_count, limit
 
@@ -488,7 +582,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return response
 
         # Get API key info
-        tier, key_id = await self._get_key_info(request)
+        tier, key_id, tenant_id = await self._get_key_info(request)
 
         # ── 1. Per-minute sliding window check (burst protection) ───────────────
         if self.rate_limit_per_minute > 0:
@@ -500,6 +594,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 logger.warning(
                     "rate_limit_exceeded_per_minute",
                     key_id=key_id,
+                    tenant_id=tenant_id,
                     tier=tier,
                     limit=self.rate_limit_per_minute,
                     window_seconds=SLIDING_WINDOW_SECONDS,
@@ -522,17 +617,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             minute_retry_after = 0
 
         # ── 2. Per-hour tier-based fixed window check (quota enforcement) ──────
+        # Now aggregated at the TENANT level — all keys in a tenant share one quota
         current_time = time.time()
         window_key = int(current_time // RATE_LIMIT_WINDOW_SECONDS)
         window_start = float(window_key * RATE_LIMIT_WINDOW_SECONDS)
         reset_seconds = int(window_start + RATE_LIMIT_WINDOW_SECONDS - current_time)
 
-        current_count, limit = await self._check_hour_limit(key_id, tier)
+        current_count, limit = await self._check_hour_limit(tenant_id, tier)
 
         if current_count >= limit:
             logger.warning(
                 "rate_limit_exceeded_per_hour",
-                key_id=key_id,
+                tenant_id=tenant_id,
                 tier=tier,
                 limit=limit,
                 count=current_count,

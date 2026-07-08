@@ -691,3 +691,58 @@ class ApiKeyResponse(BaseModel):
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json", exclude_none=True)
+
+
+# ── Tenant Management ───────────────────────────────────────────────────────────
+
+
+class TenantCreate(BaseModel):
+    """Request body for creating a new tenant."""
+
+    name: str
+    tier: str = "free"
+    handoffs_per_day: int | None = None
+    max_api_keys: int | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TenantCreate:
+        return cls.model_validate(data)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", exclude_none=True)
+
+
+class TenantUpdate(BaseModel):
+    """Request body for updating a tenant."""
+
+    name: str | None = None
+    tier: str | None = None
+    handoffs_per_day: int | None = None
+    max_api_keys: int | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TenantUpdate:
+        return cls.model_validate(data)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", exclude_none=True)
+
+
+class TenantResponse(BaseModel):
+    """Response from the tenant management API."""
+
+    id: str
+    name: str
+    tier: str
+    handoffs_per_day: int | None = None
+    max_api_keys: int | None = None
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TenantResponse:
+        return cls.model_validate(data)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", exclude_none=True)

@@ -20,25 +20,35 @@ Create keys via `POST /api/v1/keys`. Keys are hashed at rest — the full key is
 
 ## Rate Limiting
 
-Rate limits are enforced per API key at two levels:
+Rate limits are enforced at two levels:
 
 ### Per-Minute Burst Protection (Sliding Window)
 
-A sliding window rate limiter prevents short traffic bursts. Default: **60 requests per minute**.
+A sliding window rate limiter prevents short traffic bursts. This limit is **per API key**. Default: **60 requests per minute**.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `HR_RATE_LIMIT_PER_MINUTE` | 60 | Max requests per 60-second sliding window |
 
-### Per-Hour Quota (Tier-Based)
+### Per-Hour Quota (Tier-Based, Per-Tenant Aggregated)
 
-Hourly quotas are enforced per API key based on tier:
+Hourly quotas are enforced at the **tenant level**. All API keys scoped to the same tenant share a single hourly quota, preventing key-rotation from bypassing limits.
 
 | Tier | Requests / Hour |
 |------|----------------|
 | Free | 100 |
 | Pro | 1,000 |
 | Business | 10,000 |
+
+### Daily Handoff Limit (Per-Tenant)
+
+Each tenant has a daily handoff creation cap enforced at the tenant level:
+
+| Tier | Handoffs / Day |
+|------|---------------|
+| Free | 5 |
+| Pro | Unlimited |
+| Business | Unlimited |
 
 ### Rate Limit Headers
 
@@ -574,6 +584,71 @@ All keys for the authenticated tenant. Full keys are **not** returned.
 ### `DELETE /keys/{id}` — Revoke API Key
 
 Immediately invalidates the key. **Response `204 No Content`**.
+
+---
+
+## Tenant Endpoints (Admin Only)
+
+Tenant management endpoints require an admin API key. Non-admin keys receive `403 Forbidden`.
+
+### `POST /tenants` — Create Tenant
+
+**Request Body:**
+
+```json
+{
+  "name": "Acme Corp",
+  "tier": "pro",
+  "handoffs_per_day": 100,
+  "max_api_keys": 10
+}
+```
+
+**Response `201 Created`:**
+
+```json
+{
+  "id": "tenant-uuid",
+  "name": "Acme Corp",
+  "tier": "pro",
+  "handoffs_per_day": 100,
+  "max_api_keys": 10,
+  "created_at": "2026-07-08T05:00:00Z",
+  "updated_at": "2026-07-08T05:00:00Z",
+  "deleted_at": null
+}
+```
+
+### `GET /tenants` — List Tenants
+
+**Response `200 OK`:** Array of tenant objects (excluding soft-deleted).
+
+### `GET /tenants/{id}` — Get Tenant
+
+**Response `200 OK`:** Full tenant object. **Response `404 Not Found`** if not found or soft-deleted.
+
+### `PATCH /tenants/{id}` — Update Tenant
+
+**Request Body:** (all fields optional)
+
+```json
+{
+  "name": "Acme Corp Updated",
+  "tier": "business",
+  "handoffs_per_day": 500,
+  "max_api_keys": 50
+}
+```
+
+**Response `200 OK`:** Updated tenant object.
+
+### `DELETE /tenants/{id}` — Soft-Delete Tenant
+
+Marks the tenant as deleted. Existing data is retained but the tenant is hidden from list and get operations. **Response `204 No Content`**.
+
+### `GET /tenants/{id}/keys` — List Tenant API Keys
+
+Lists all API keys for a specific tenant. **Response `200 OK`:** Array of API key objects (without key values).
 
 ---
 

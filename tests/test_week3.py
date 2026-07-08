@@ -831,12 +831,18 @@ class TestRateLimiting:
 
     @pytest.mark.asyncio
     async def test_rate_limit_headers_values(self, client: AsyncClient):
-        """Rate limit headers reflect the configured tier limits."""
-        # Test app uses generous limits (100000 for free tier)
+        """Rate limit headers reflect the actual key tier (business) and configured per-minute limit.
+
+        The test key created in conftest has tier="business", so the
+        middleware should correctly detect it via DB lookup and set
+        the tier header to "business".
+        When per-minute limit is set (rate_limit_per_minute > 0), the
+        X-RateLimit-Limit header reflects the per-minute sliding window limit.
+        """
         resp = await client.get("/api/v1/packets")
-        assert resp.headers["x-ratelimit-tier"] == "free"
-        # Should be generous for tests
-        assert int(resp.headers["x-ratelimit-limit"]) > 100
+        assert resp.headers["x-ratelimit-tier"] == "business"
+        # Per-minute limit (rate_limit_per_minute=100000 in test config)
+        assert int(resp.headers["x-ratelimit-limit"]) == 100000
 
     @pytest.mark.asyncio
     async def test_rate_limit_exempt_paths(self, client: AsyncClient):

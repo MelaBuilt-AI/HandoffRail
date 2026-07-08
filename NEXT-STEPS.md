@@ -1,6 +1,6 @@
 # HandoffRail — Roadmap & Future Additions
 
-## ✅ Completed (Items 1-7, 9, 10, 13)
+## ✅ Completed (Items 1-11, 13)
 
 | # | Feature | Status | Commit |
 |---|---------|--------|--------|
@@ -13,13 +13,14 @@
 | 7 | Rate Limiting (Per API Key) | ✅ per-minute sliding window + hourly tier quotas, Redis/fallback | this commit |
 | 9 | OpenAPI Schema Export & API Explorer | ✅ `/docs`, `/redoc`, `/openapi.json`, exported `docs/openapi.json` | this commit |
 | 10 | Redis Pub/Sub for Real-Time Events | ✅ SSEManager, /events endpoint, batch event publishing, Python SDK SSE client, 515 tests | this commit |
+| 11 | Multi-Tenant Isolation | ✅ tenant_id enforced on all queries, per-tenant rate limits, tenant CRUD, migration | this commit |
 | 13 | Structured Audit Log | ✅ tenant-scoped `GET /api/v1/audit` over lifecycle events | this commit |
 
-**Test totals after items 1-7, 9, 10, 13:** 515 passing
+**Test totals after items 1-11, 13:** 549 Python + 139 TypeScript passing
 
 ---
 
-## 📋 Remaining Roadmap (Items 8, 10-12, 14-15)
+## 📋 Remaining Roadmap (Items 12, 14-15)
 
 These are the features analyzed during the roadmap session on 2026-07-05. Impact and effort ratings are approximate. Pick and choose when ready to implement.
 
@@ -45,21 +46,9 @@ handoffrail keys create --name="prod-key"
 - 78 CLI tests, all quality gates passing
 - Docs added to docs/api-reference.md
 
-### 10. Redis Pub/Sub for Real-Time Events ✅
-**Impact:** High · **Effort:** Medium · **Status:** Complete (2026-07-08)
 
-Added SSEManager + SSEConnection for SSE streaming, /events endpoint with channel subscriptions and keepalive, publish_event calls in batch endpoints, Redis event callback relay to both WebSocket and SSE. Python SDK SSE client with auto-reconnect. 10 new tests (515 total).
 
-### 11. Multi-Tenant Isolation
-**Impact:** High · **Effort:** High
 
-Currently `tenant_id` is stored but not enforced. Add proper tenant isolation.
-
-- Enforce `tenant_id` on all queries (filter at the SQLAlchemy session level)
-- API keys scoped to a single tenant
-- Tenant management endpoints (`POST /tenants`, `GET /tenants/{id}`)
-- Per-tenant rate limits and webhook configurations
-- Migration path: default tenant for existing single-tenant users
 
 ### 12. RBAC (Role-Based Access Control)
 **Impact:** Medium · **Effort:** High

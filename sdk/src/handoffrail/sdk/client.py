@@ -34,6 +34,8 @@ from handoffrail.sdk.exceptions import (
     ValidationError,
 )
 from handoffrail.sdk.models import (
+    ApiKeyCreate,
+    ApiKeyResponse,
     AuditLogResponse,
     BatchClaimRequest,
     BatchClaimResponse,
@@ -41,16 +43,17 @@ from handoffrail.sdk.models import (
     BatchCompleteResponse,
     BatchCreateResponse,
     ChainHandoffRequest,
-   HitlRespondRequest,
-   PacketClaim,
-   PacketCreate,
-    ApiKeyCreate,
-    ApiKeyResponse,
-   PacketHistoryResponse,
-   PacketListResponse,
+    HitlRespondRequest,
+    PacketClaim,
+    PacketCreate,
+    PacketHistoryResponse,
+    PacketListResponse,
     PacketResponse,
     PacketUpdate,
     SearchOptions,
+    TenantCreate,
+    TenantResponse,
+    TenantUpdate,
     WebhookCreate,
     WebhookResponse,
 )
@@ -604,3 +607,35 @@ class HandoffRailClient:
         """
         data = self._request("GET", "/keys")
         return [ApiKeyResponse.from_dict(k) for k in data]
+
+    def create_tenant(self, *, name: str, tier: str = "free", handoffs_per_day: int | None = None, max_api_keys: int | None = None) -> TenantResponse:
+        """Create a new tenant. Requires admin API key."""
+        payload = TenantCreate(name=name, tier=tier, handoffs_per_day=handoffs_per_day, max_api_keys=max_api_keys)
+        data = self._request("POST", "/tenants", json_data=payload.to_dict())
+        return TenantResponse.from_dict(data)
+
+    def list_tenants(self) -> list[TenantResponse]:
+        """List all tenants. Requires admin API key."""
+        data = self._request("GET", "/tenants")
+        return [TenantResponse.from_dict(t) for t in data]
+
+    def get_tenant(self, tenant_id: str) -> TenantResponse:
+        """Get tenant details by ID. Requires admin API key."""
+        data = self._request("GET", f"/tenants/{tenant_id}")
+        return TenantResponse.from_dict(data)
+
+    def update_tenant(self, tenant_id: str, *, name: str | None = None, tier: str | None = None, handoffs_per_day: int | None = None, max_api_keys: int | None = None) -> TenantResponse:
+        """Update a tenant. Requires admin API key."""
+        payload = TenantUpdate(name=name, tier=tier, handoffs_per_day=handoffs_per_day, max_api_keys=max_api_keys)
+        data = self._request("PATCH", f"/tenants/{tenant_id}", json_data=payload.to_dict())
+        return TenantResponse.from_dict(data)
+
+    def delete_tenant(self, tenant_id: str) -> None:
+        """Soft-delete a tenant. Requires admin API key."""
+        self._request("DELETE", f"/tenants/{tenant_id}")
+
+    def list_tenant_keys(self, tenant_id: str) -> list[ApiKeyResponse]:
+        """List all API keys for a specific tenant. Requires admin API key."""
+        data = self._request("GET", f"/tenants/{tenant_id}/keys")
+        return [ApiKeyResponse.from_dict(k) for k in data]
+
