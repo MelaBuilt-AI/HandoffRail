@@ -11,6 +11,7 @@ jobs:
     environment: pypi
     permissions:
       contents: read
+      id-token: write  # required for trusted publishing
     steps:
       - uses: actions/checkout@v7
 
@@ -26,9 +27,8 @@ jobs:
         working-directory: sdk
         run: python -m build
 
-      - name: Publish to PyPI
+      - name: Publish to PyPI (trusted publisher)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: sdk/dist/
           skip-existing: true
-          password: ${{ secrets.PYPI_API_TOKEN }}
