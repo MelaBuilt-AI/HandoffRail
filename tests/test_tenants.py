@@ -15,14 +15,11 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
-
 from app.database import async_session
 from app.middleware.auth import generate_api_key
 from app.models.db import ApiKey
+from httpx import AsyncClient
 
 
 @pytest_asyncio.fixture

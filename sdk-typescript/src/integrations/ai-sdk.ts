@@ -17,10 +17,7 @@
 
 import type {
   PacketCreate,
-  PacketResponse,
   PacketUpdate,
-  PacketListResponse,
-  PacketHistoryResponse,
   ChainHandoffRequest,
   PacketContext,
   Metadata,
@@ -31,10 +28,9 @@ import type {
 
 import {
   HandoffRailClient,
-  type HandoffRailClientOptions,
 } from '../client';
 
-import { HandoffRailError, NotFoundError } from '../errors';
+import { HandoffRailError } from '../errors';
 
 // ── Type helpers ─────────────────────────────────────────────────────────
 

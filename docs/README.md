@@ -78,7 +78,7 @@ HandoffRail sits between your agents as structured middleware. It doesn't orches
 | [Quick Start](docs/quickstart.md) | 5-minute setup to your first handoff |
 | [API Reference](docs/api-reference.md) | All 19 endpoints with examples |
 | [SDK Guide](docs/sdk-guide.md) | Python SDK, builder pattern, async client |
-| [Deployment](docs/deployment.md) | Docker, PostgreSQL, Redis, production config |
+| [Deployment](deployment.md) | Docker Compose, PostgreSQL, Redis, TLS, monitoring, backups, scaling |
 
 ## Framework Integrations
 

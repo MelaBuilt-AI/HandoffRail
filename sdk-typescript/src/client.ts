@@ -53,6 +53,7 @@ import type {
   SearchOptions,
   SchemaResponse,
   SchemaListResponse,
+  ApiKeyResponse,
 } from './models';
 
 import {
@@ -628,8 +629,32 @@ export class HandoffRailClient {
 
   /** Get a schema by ID. */
   getSchema(schemaId: string): SchemaResponse {
-    const data = this._request('GET', `/schemas/\${encodeURIComponent(schemaId)}`);
+    const data = this._request('GET', `/schemas/${encodeURIComponent(schemaId)}`);
     return data as unknown as SchemaResponse;
+  }
+
+  // ── API Keys ────────────────────────────────────────────────────────────────
+
+  /** Create a new API key. */
+  createApiKey(options: {
+    name: string;
+    tenant_id?: string;
+    role?: 'admin' | 'writer' | 'reader' | 'agent';
+  }): ApiKeyResponse {
+    const data = this._request('POST', '/keys', {
+      jsonData: {
+        name: options.name,
+        tenant_id: options.tenant_id,
+        role: options.role ?? 'admin',
+      },
+    });
+    return data as unknown as ApiKeyResponse;
+  }
+
+  /** List all API keys for the current tenant. */
+  listApiKeys(): ApiKeyResponse[] {
+    const data = this._request('GET', '/keys');
+    return data as unknown as ApiKeyResponse[];
   }
 
   // ── Response helpers ───────────────────────────────────────────────────

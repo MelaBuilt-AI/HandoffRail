@@ -34,7 +34,6 @@ import type {
   PacketUpdate,
   PacketHistoryResponse,
   ChainHandoffRequest,
-  WebhookCreate,
   WebhookResponse,
   ListPacketsOptions,
   ListAuditOptions,
@@ -47,9 +46,6 @@ import type {
   BatchClaimResponse,
   BatchCompleteResponse,
   SearchOptions,
-  SchemaCreate,
-  SchemaResponse,
-  SchemaListResponse,
 } from './models';
 
 import {

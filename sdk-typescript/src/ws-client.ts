@@ -204,11 +204,6 @@ export interface AsyncWebSocketClientOptions {
   webSocketFactory?: WebSocketFactory;
 }
 
-// ── Helper: sleep ───────────────────────────────────────────────────────────
-
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
 // ── Client ───────────────────────────────────────────────────────────────────
 
 /**

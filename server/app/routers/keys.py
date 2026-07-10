@@ -48,7 +48,7 @@ async def create_api_key(
         target_role = payload.role
     else:
         # Non-admin keys can only create keys with the same or lower role
-        from app.middleware.rbac import get_role_level, ROLE_HIERARCHY
+        from app.middleware.rbac import get_role_level
         current_level = get_role_level(_current_key.role)
         requested_level = get_role_level(payload.role)
         if requested_level > current_level:

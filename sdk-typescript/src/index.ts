@@ -107,6 +107,9 @@ export type {
   SchemaResponse,
   SchemaListResponse,
   ListSchemasOptions,
+  // API Keys
+  CreateApiKeyOptions,
+  ApiKeyResponse,
 } from './models';
 
 export {

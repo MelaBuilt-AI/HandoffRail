@@ -15,8 +15,9 @@
 | 10 | Redis Pub/Sub for Real-Time Events | ✅ SSEManager, /events endpoint, batch event publishing, Python SDK SSE client, 515 tests | this commit |
 | 11 | Multi-Tenant Isolation | ✅ tenant_id enforced on all queries, per-tenant rate limits, tenant CRUD, migration | this commit |
 | 13 | Structured Audit Log | ✅ tenant-scoped `GET /api/v1/audit` over lifecycle events | this commit |
+| 14 | Schema Validation & Migration Tooling | ✅ Schema Registry CRUD, packet validation, Alembic migration, SDK updates | `b30970b2` |
 
-**Test totals after items 1-11, 13:** 549 Python + 139 TypeScript passing
+**Test totals after items 1-14:** 563 Python + 139 TypeScript passing
 
 ---
 
@@ -64,7 +65,7 @@ Add roles to API keys for finer-grained permissions.
 - Add `role` field to API key creation endpoint
 
 ### 14. Schema Validation & Migration Tooling
-**Impact:** Medium · **Effort:** Medium
+**Impact:** Medium · **Effort:** Medium · **Status:** ✅ Complete (2026-07-08)
 
 The `context` JSON field is freeform. Add optional schema validation.
 
@@ -73,6 +74,11 @@ The `context` JSON field is freeform. Add optional schema validation.
 - Schema registry endpoint (`POST /schemas`, `GET /schemas/{id}`)
 - Alembic migration helper for schema changes
 - Versioned API (`/api/v2/`) preparation
+- ✅ 14 new tests, all 563 Python tests passing
+- ✅ Schema Registry with full CRUD (SQLAlchemy + Alembic migration 0003_schemas.py)
+- ✅ Packet context validation with jsonschema (422 on invalid)
+- ✅ Python SDK (SchemaCreate, SchemaResponse, create/list/get)
+- ✅ TypeScript SDK (createSchema/listSchema/getSchema)
 
 ### 15. Metrics Dashboard (Grafana)
 **Impact:** Low · **Effort:** Medium

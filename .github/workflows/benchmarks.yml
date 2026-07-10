@@ -1,0 +1,63 @@
+name: Benchmarks
+
+on:
+  pull_request:
+    paths:
+      - "handoffrail/**"
+      - "server/**"
+      - "benchmarks/**"
+      - "loadtests/**"
+      - "pyproject.toml"
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install hatchling>=1.21
+          pip install -e "server[dev]"
+          pip install aiohttp httpx click
+
+      - name: Run Packet Throughput Benchmark (smoke test)
+        run: |
+          cd server && pip install -e ".[dev]" && cd ..
+          HR_BENCH_INPROCESS=1 python -m benchmarks.benchmark_packet_throughput \
+            --concurrency 5 --duration 5
+
+      - name: Run Memory Profile Benchmark (smoke test)
+        run: |
+          HR_BENCH_INPROCESS=1 python -m benchmarks.benchmark_memory_profile \
+            --concurrency 5 --duration 5
+
+      - name: Run Concurrent Clients Benchmark (smoke test)
+        run: |
+          HR_BENCH_INPROCESS=1 python -m benchmarks.benchmark_concurrent_clients \
+            --api-clients 5 --ws-clients 5 --duration 5
+
+      - name: Upload benchmark logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: |
+            /tmp/benchmark-*.log
+          retention-days: 7
+
+      - name: Summary
+        run: |
+          echo "✓ Benchmark smoke tests completed"
+          echo "Full suite: docker compose up && locust -f loadtests/locustfile.py"

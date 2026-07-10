@@ -527,3 +527,47 @@ export interface SearchOptions {
   status?: string;
   priority?: string;
 }
+
+// ── Schema Registry ──────────────────────────────────────────────────────────────
+
+/**
+ * Options for creating a new JSON schema for packet context validation.
+ */
+export interface SchemaCreate {
+  /** Schema name (1–128 characters). */
+  name: string;
+  /** JSON Schema specification (draft-07+). Must have a `type` field. */
+  json_schema: Record<string, unknown>;
+  /** Schema version number (≥1, default 1). */
+  version?: number;
+}
+
+/**
+ * Response from the schema registry.
+ */
+export interface SchemaResponse {
+  id: string;
+  name: string;
+  version: number;
+  json_schema: Record<string, unknown>;
+  tenant_id: string;
+  created_at: string;
+}
+
+/**
+ * Paginated list of schemas.
+ */
+export interface SchemaListResponse {
+  schemas: SchemaResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * Options for listing schemas.
+ */
+export interface ListSchemasOptions {
+  limit?: number;
+  offset?: number;
+}

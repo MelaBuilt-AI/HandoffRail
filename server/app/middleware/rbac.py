@@ -20,13 +20,11 @@ from __future__ import annotations
 import os
 import re
 import time
-from typing import Any
 
 import structlog
 from fastapi import Request, Response
 from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.types import ASGIApp
 
 logger = structlog.get_logger()
 
