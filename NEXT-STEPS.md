@@ -1,6 +1,8 @@
 # HandoffRail — Roadmap & Future Additions
 
-## ✅ Completed (Items 1-11, 13)
+## ✅ Completed (Items 1-15)
+
+All roadmap items are now complete.
 
 | # | Feature | Status | Commit |
 |---|---------|--------|--------|
@@ -52,17 +54,19 @@ handoffrail keys create --name="prod-key"
 
 
 ### 12. RBAC (Role-Based Access Control)
-**Impact:** Medium · **Effort:** High
+**Impact:** Medium · **Effort:** High · **Status:** ✅ Complete
 
-Add roles to API keys for finer-grained permissions.
+Roles added to API keys for finer-grained permissions.
 
-- Roles: `admin`, `writer`, `reader`, `agent`
+- Roles: `admin` (4), `writer` (3), `agent` (2), `reader` (1)
 - `admin`: all operations including key management
 - `writer`: create/update/claim/complete packets
 - `reader`: list/get/search only
 - `agent`: claim/complete packets only (no create)
-- Store role on API key, enforce in middleware
-- Add `role` field to API key creation endpoint
+- Stored on API key, enforced via RBACMiddleware + `require_role()` dependency
+- `role` field on API key creation endpoint
+- In-memory role cache (5 min TTL) for performance
+- Non-admin keys can only create keys with same or lower role
 
 ### 14. Schema Validation & Migration Tooling
 **Impact:** Medium · **Effort:** Medium · **Status:** ✅ Complete (2026-07-08)
@@ -81,15 +85,14 @@ The `context` JSON field is freeform. Add optional schema validation.
 - ✅ TypeScript SDK (createSchema/listSchema/getSchema)
 
 ### 15. Metrics Dashboard (Grafana)
-**Impact:** Low · **Effort:** Medium
+**Impact:** Low · **Effort:** Medium · **Status:** ✅ Complete
 
-Prometheus metrics are already exposed at `/metrics`. Add a pre-built Grafana dashboard.
+Prometheus metrics exposed at `/metrics`. Pre-built Grafana dashboard + monitoring docs.
 
-- JSON dashboard export in `docs/grafana-dashboard.json`
-- Panels: packets by status, throughput (create/claim/complete per minute), webhook delivery success rate, API latency p50/p95/p99, active agents
+- JSON dashboard export: `docs/grafana-dashboard.json` (1861 lines)
+- Monitoring docs: `docs/monitoring.md` (434 lines) with setup instructions
+- Panels: packets by status, throughput, webhook delivery success rate, API latency p50/p95/p99, active agents
 - Alert rules: high error rate, webhook failure spike, queue depth
-- Add `docs/monitoring.md` with setup instructions
-- Optional: integrate with PagerDuty for critical alerts
 
 ---
 
@@ -105,13 +108,9 @@ When ready to implement the next batch:
 7. Update both Python and TypeScript SDKs
 8. Commit and push
 
-## Suggested Next Batch (High Impact, Low Effort)
+All 15 roadmap items are implemented and tested. The project is feature-complete for v0.3.0.
 
-If picking the next 3-4 items for maximum value with minimal effort:
-- **Item 8** (CLI Tool) — useful for demos/support workflows
-- **Item 10** (Redis Pub/Sub) — horizontal scaling for WebSockets
-- **Item 11** (Multi-Tenant Isolation) — strongest remaining production boundary
-- **Item 14** (Schema Validation) — better enterprise data contracts
+**Next phase:** Advanced features (analytics, event sourcing, production hardening) or new release.
 
 ---
 
