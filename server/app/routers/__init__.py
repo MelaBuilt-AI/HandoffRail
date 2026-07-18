@@ -8,6 +8,7 @@ from app.routers.keys import router as keys_router
 from app.routers.metrics import router as metrics_router
 from app.routers.packets import router as packets_router
 from app.routers.schemas import router as schemas_router
+from app.routers.system import router as system_router
 from app.routers.tenants import router as tenants_router
 from app.routers.websocket import router as websocket_router
 
@@ -20,6 +21,7 @@ __all__ = [
     "metrics_router",
     "dashboard_router",
     "schemas_router",
+    "system_router",
     "tenants_router",
     "websocket_router",
 ]

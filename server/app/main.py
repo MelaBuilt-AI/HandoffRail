@@ -26,6 +26,7 @@ from app.routers import (
     metrics_router,
     packets_router,
     schemas_router,
+    system_router,
     tenants_router,
     websocket_router,
 )
@@ -137,6 +138,7 @@ def create_app(
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(dashboard_router)
+    app.include_router(system_router)
     app.include_router(websocket_router)
 
     # Mount dashboard static files (if the directory exists)

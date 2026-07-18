@@ -43,9 +43,10 @@ VALID_ROLES = set(ROLE_HIERARCHY.keys())
 # ── Endpoint → required role mapping ──────────────────────────────────────────
 
 _ROUTE_RULES: list[tuple[re.Pattern[str], str, set[str] | None]] = [
-    # Admin-only: key management, tenants
+    # Admin-only: key management, tenants, system health
     (re.compile(r"^/api/v1/keys"), "admin", None),
     (re.compile(r"^/api/v1/tenants"), "admin", None),
+    (re.compile(r"^/api/v1/system"), "admin", None),
 
     # Reader: GET on packets
     (re.compile(r"^/api/v1/packets/search"), "reader", {"GET"}),
